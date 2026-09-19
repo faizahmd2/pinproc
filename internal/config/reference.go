@@ -8,22 +8,7 @@ import (
 const ReferenceYAML = `# diagnos configuration
 # Every setting is optional. Precedence: CLI flags > DIAGNOS_* env vars > this file > defaults.
 
-# ssh reaches the target with native SSH; no Ansible or Python is required.
-ssh:
-  # user: ubuntu
-  # port: 22
-  # Private key path. This is NOT the .pub file in authorized_keys.
-  # key_path: ~/.ssh/id_ed25519
-  # host_key_policy: prompt # prompt | strict | accept-new | insecure
-  # known_hosts: ~/.ssh/known_hosts
-  # jump_hosts: [bastion.internal:22]
-  # connect_timeout: 10s
-  # command_timeout: 30s
-  # max_parallel: 4 # capped at 8 because sshd MaxSessions commonly defaults to 10
-  # max_output_bytes: 1048576
 
-# Existing target aliases remain supported. You may also pass a host directly to ` + "`diagnos debug <host>`" + `.
-targets: {}
 
 
 ai:
@@ -36,7 +21,7 @@ ai:
 output:
   # app-metrics writes a compact direct report. with-ai enables the full
   # existing two-stage AI investigation.
-  report_type: app-metrics
+  report_type: with-ai
 `
 
 func WriteReference(path string, force bool) error {
