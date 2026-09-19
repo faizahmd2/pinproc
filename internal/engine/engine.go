@@ -169,7 +169,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 			cap, ok := e.opt.Registry.Get(c.Capability)
 			if !ok {
 				continue
-			}			if err := capability.ValidateScope(cap, c.Scope, inv); err != nil {
+			}
+			if err := capability.ValidateScope(cap, c.Scope, inv); err != nil {
 				inv.Path = append(inv.Path, contract.Step{
 					Depth:      cap.Level,
 					Capability: c.Capability,
