@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -72,7 +71,11 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	var req triggerRequest
 	if r.Body != nil {
 		defer r.Body.Close()
-		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req)
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+		if err := dec.Decode(&req); err != nil && err.Error() != "EOF" {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
 	}
 	if req.Budget == "" {
 		req.Budget = s.cfg.Engine.Budget
@@ -117,7 +120,7 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.cfg.Narrator.Enabled {
-		if text, ne := narrator.NewRules().Narrate(context.Background(), inv); ne == nil && narrator.Validate(inv, text) == nil {
+		if text, ne := narrator.NewRules().Narrate(r.Context(), inv); ne == nil && narrator.Validate(inv, text) == nil {
 			inv.Narrative = text
 		}
 	}
@@ -127,7 +130,7 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"id": inv.ID, "status": "completed", "stop_reason": inv.StopReason,
 		"report": "/report",
