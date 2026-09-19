@@ -25,9 +25,6 @@ decision:
 narrator:
   enabled: true
 
-agent:
-  report_dir: ~/diagnos/reports
-
 output:
   directory: ~/diagnos/reports
 `
