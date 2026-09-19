@@ -10,20 +10,6 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("config is nil")
 	}
 
-	for name, target := range cfg.Targets {
-		if strings.TrimSpace(name) == "" {
-			return fmt.Errorf("target name cannot be empty")
-		}
-
-		if strings.TrimSpace(target.Host) == "" {
-			return fmt.Errorf("target %q has empty host", name)
-		}
-
-		if strings.TrimSpace(target.User) == "" {
-			return fmt.Errorf("target %q has empty user", name)
-		}
-	}
-
 	if strings.TrimSpace(cfg.AI.Model) != "" {
 		if _, ok := cfg.AI.Models[cfg.AI.Model]; !ok {
 			return fmt.Errorf(
@@ -35,20 +21,9 @@ func Validate(cfg *Config) error {
 
 	if cfg.AI.RequestLimits.MaxLinesContextFile <= 0 {
 		return fmt.Errorf("ai.request_limits.max_lines_context_file must be greater than 0")
-	}
-	if cfg.SSH.Port < 1 || cfg.SSH.Port > 65535 {
-		return fmt.Errorf("ssh.port must be between 1 and 65535")
-	}
-	if cfg.SSH.MaxParallel < 1 {
-		return fmt.Errorf("ssh.max_parallel must be greater than zero")
-	}
-	if cfg.Engine.Budget != "fast" && cfg.Engine.Budget != "normal" && cfg.Engine.Budget != "deep" {
+	}	if cfg.Engine.Budget != "fast" && cfg.Engine.Budget != "normal" && cfg.Engine.Budget != "deep" {
 		return fmt.Errorf("engine.budget must be fast, normal, or deep")
-	}
-	if cfg.Engine.RemoteMaxLevel < 1 {
-		cfg.Engine.RemoteMaxLevel = 2
-	}
-	if cfg.Engine.ParallelWidth < 1 {
+	}	if cfg.Engine.ParallelWidth < 1 {
 		cfg.Engine.ParallelWidth = 3
 	}
 	if cfg.Decision.Provider != "jev" && cfg.Decision.Provider != "llm" && cfg.Decision.Provider != "rules" {
