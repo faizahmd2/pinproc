@@ -25,13 +25,11 @@ decision:
 narrator:
   enabled: true
 
-identity:
-  docker_socket: /var/run/docker.sock
-  cloud_metadata: false
-
 agent:
   report_dir: ~/diagnos/reports
-  retain: 50
+
+output:
+  directory: ~/diagnos/reports
 `
 
 func WriteReference(path string, force bool) error {
