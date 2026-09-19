@@ -4,4 +4,4 @@ investigation.json is the stable machine-readable contract. report.md is derived
 
 Evidence records include capability, entity, dimension, level, observations, source paths and verification commands. Unavailable collection is explicit.
 
-Findings are graded observed, correlated or inferred. Reports always render attribution, verification, not-investigated work and limitations so the operator can work backwards from every claim.
+Findings are generated from deterministic rule signals. Reports render attribution, verification, not-investigated work and limitations so the operator can work backwards from every claim.
