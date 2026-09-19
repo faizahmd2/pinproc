@@ -10,22 +10,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type ModelConfig struct {
-	BaseURL   string `yaml:"base_url"`
-	APIKeyEnv string `yaml:"api_key_env"`
-}
-
-type ApplicationLogConfig struct {
-	Name    string   `yaml:"name"`
-	Service string   `yaml:"service"`
-	Paths   []string `yaml:"paths"`
-}
-
 type EngineConfig struct {
 	Budget        string        `yaml:"budget"`
 	SampleWindow  time.Duration `yaml:"sample_window"`
 	ParallelWidth int           `yaml:"parallel_width"`
 }
+
 type DecisionConfig struct {
 	Provider string        `yaml:"provider"`
 	BaseURL  string        `yaml:"base_url"`
@@ -33,17 +23,13 @@ type DecisionConfig struct {
 	APIKey   string        `yaml:"api_key"`
 	Timeout  time.Duration `yaml:"timeout"`
 }
+
 type NarratorConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Model   string `yaml:"model"`
+	Enabled bool `yaml:"enabled"`
 }
-type IdentityConfig struct {
-	DockerSocket  string `yaml:"docker_socket"`
-	CloudMetadata bool   `yaml:"cloud_metadata"`
-}
+
 type AgentConfig struct {
 	ReportDir string `yaml:"report_dir"`
-	Retain    int    `yaml:"retain"`
 }
 
 type Config struct {
@@ -52,27 +38,9 @@ type Config struct {
 		LogLevel string `yaml:"log_level"`
 	} `yaml:"app"`
 
-	AI struct {
-		Provider string                 `yaml:"provider"`
-		APIKey   string                 `yaml:"api_key"`
-		BaseURL  string                 `yaml:"base_url"`
-		Timeout  time.Duration          `yaml:"timeout"`
-		Model    string                 `yaml:"model"`
-		Models   map[string]ModelConfig `yaml:"models"`
-
-		RequestLimits struct {
-			MaxLinesContextFile int `yaml:"max_lines_context_file"`
-		} `yaml:"request_limits"`
-	} `yaml:"ai"`
-
-	Logs struct {
-		Applications []ApplicationLogConfig `yaml:"applications"`
-	} `yaml:"logs"`
-
 	Engine   EngineConfig   `yaml:"engine"`
 	Decision DecisionConfig `yaml:"decision"`
 	Narrator NarratorConfig `yaml:"narrator"`
-	Identity IdentityConfig `yaml:"identity"`
 	Agent    AgentConfig    `yaml:"agent"`
 
 	Server struct {
@@ -80,8 +48,7 @@ type Config struct {
 	} `yaml:"server"`
 
 	Output struct {
-		ReportType string `yaml:"report_type"`
-		Directory  string `yaml:"directory"`
+		Directory string `yaml:"directory"`
 	} `yaml:"output"`
 }
 
@@ -94,7 +61,6 @@ func Load(path string) (*Config, error) {
 		if resolved, err := filepath.Abs(path); err == nil {
 			path = resolved
 		}
-
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
@@ -104,32 +70,21 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	applyEnv(&cfg)
-
 	if err := Validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
-
 	return &cfg, nil
 }
 
-// DiscoverPath returns the first conventional config file. An empty result is
-// intentional: a default config plus environment/SSH-agent authentication is valid.
+// DiscoverPath returns the first conventional configuration file.
 func DiscoverPath() string {
-	// app.yaml is the production configuration. configs/app.yaml remains a
-	// compatibility location for existing installations.
 	candidates := []string{}
-	// A downloaded release consists of only diagnos and app.yaml. Prefer the
-	// adjacent config so running it from another working directory still works.
 	if executable, err := os.Executable(); err == nil {
 		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 			executable = resolved
 		}
-
 		dir := filepath.Dir(executable)
-		candidates = append(candidates,
-			filepath.Join(dir, "app.yaml"),
-			filepath.Join(dir, "app.yml"),
-		)
+		candidates = append(candidates, filepath.Join(dir, "app.yaml"), filepath.Join(dir, "app.yml"))
 	}
 	candidates = append(candidates, "app.yaml", "app.yml", filepath.Join("configs", "app.yaml"), filepath.Join("configs", "app.yml"))
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
@@ -144,16 +99,12 @@ func DiscoverPath() string {
 	}
 	return ""
 }
+
 func defaults() Config {
 	var cfg Config
 	cfg.App.Name = "diagnos"
 	cfg.App.LogLevel = "info"
-	// The direct report is intentionally compact; this is the shared evidence
-	// budget used by both report modes.
-	cfg.AI.RequestLimits.MaxLinesContextFile = 250
-	cfg.Output.ReportType = "app-metrics"
 	cfg.Output.Directory = "~/diagnos/reports"
-	cfg.AI.Model = "gemini/gemini-3.5-flash-lite"
 	cfg.Engine.Budget = "normal"
 	cfg.Engine.SampleWindow = time.Second
 	cfg.Engine.ParallelWidth = 3
@@ -162,16 +113,11 @@ func defaults() Config {
 	cfg.Decision.Model = "jev-latest"
 	cfg.Decision.Timeout = 10 * time.Second
 	cfg.Narrator.Enabled = true
-	cfg.Narrator.Model = cfg.AI.Model
-	cfg.Identity.DockerSocket = "/var/run/docker.sock"
 	cfg.Agent.ReportDir = "~/diagnos/reports"
 	cfg.Server.Listen = "127.0.0.1:8080"
-	cfg.Agent.Retain = 50
-	cfg.AI.Models = map[string]ModelConfig{
-		cfg.AI.Model: {BaseURL: "https://generativelanguage.googleapis.com", APIKeyEnv: "DIAGNOS_AI_API_KEY"},
-	}
 	return cfg
 }
+
 func applyEnv(cfg *Config) {
 	if v := os.Getenv("TYPESAFE_API_KEY"); v != "" {
 		cfg.Decision.APIKey = v
@@ -191,19 +137,6 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("DIAGNOS_DECISION_BASE_URL"); v != "" {
 		cfg.Decision.BaseURL = v
 	}
-	if v := os.Getenv("DIAGNOS_AI_API_KEY"); v != "" { // existing model adapters use their named env var; retain the value for config check only.
-		cfg.AI.APIKey = v
-		if cfg.AI.Models == nil {
-			cfg.AI.Models = map[string]ModelConfig{}
-		}
-		if cfg.AI.Model != "" {
-			model := cfg.AI.Models[cfg.AI.Model]
-			if model.APIKeyEnv == "" {
-				model.APIKeyEnv = "DIAGNOS_AI_API_KEY"
-				cfg.AI.Models[cfg.AI.Model] = model
-			}
-		}
-	}
 }
 
 func ResolveOutputDirectory(path string) (string, error) {
@@ -211,7 +144,6 @@ func ResolveOutputDirectory(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("output directory cannot be empty")
 	}
-
 	if path == "~" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -219,7 +151,6 @@ func ResolveOutputDirectory(path string) (string, error) {
 		}
 		return home, nil
 	}
-
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -227,6 +158,5 @@ func ResolveOutputDirectory(path string) (string, error) {
 		}
 		return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
 	}
-
 	return filepath.Clean(path), nil
 }
