@@ -1,0 +1,14 @@
+Rss:            512000 kB
+Pss:            490000 kB
+Pss_Anon:       400000 kB
+Pss_File:        78000 kB
+Pss_Shmem:       12000 kB
+Shared_Clean:    50000 kB
+Shared_Dirty:     1000 kB
+Private_Clean:  200000 kB
+Private_Dirty:  261000 kB
+Referenced:     500000 kB
+Anonymous:      400000 kB
+LazyFree:            0 kB
+Swap:               0 kB
+SwapPss:            0 kB

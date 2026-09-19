@@ -1,0 +1,20 @@
+Name:   my (weird) proc
+Umask:  0022
+State:  S (sleeping)
+Tgid:   4812
+Pid:    4812
+PPid:   1
+TracerPid: 0
+Uid:    1000 1000 1000 1000
+Gid:    1000 1000 1000 1000
+FDSize: 64
+VmPeak: 4194304 kB
+VmSize: 4194304 kB
+VmRSS:  512000 kB
+RssAnon: 400000 kB
+RssFile: 100000 kB
+RssShmem: 12000 kB
+VmSwap: 0 kB
+Threads: 8
+voluntary_ctxt_switches: 100
+nonvoluntary_ctxt_switches: 20

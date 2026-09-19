@@ -1,0 +1,9 @@
+# Local binaries and release output
+diagnos
+dist/
+
+# Runtime investigation evidence
+debug/
+
+# OS/editor metadata
+.DS_Store

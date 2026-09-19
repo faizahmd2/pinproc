@@ -1,0 +1,11 @@
+pgscan_kswapd 100
+pgscan_direct 0
+pgsteal_kswapd 90
+pgsteal_direct 0
+pswpin 0
+pswpout 0
+pgfault 10000
+pgmajfault 10
+oom_kill 0
+nr_free_pages 256000
+workingset_refault 12

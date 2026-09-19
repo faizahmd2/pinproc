@@ -1,0 +1,10 @@
+cpu  100 2 30 800 8 1 2 0 0 0
+cpu0 25 0 8 205 1 0 1 0 0 0
+cpu1 25 1 7 195 3 0 0 0 0 0
+cpu2 25 1 7 200 2 1 0 0 0 0
+cpu3 25 0 8 200 2 0 1 0 0 0
+ctxt 123456
+processes 987
+procs_running 2
+procs_blocked 1
+btime 1710000000

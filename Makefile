@@ -1,0 +1,51 @@
+.PHONY: build release test test-race vet fmt fmt-check docs install clean
+
+VERSION ?= dev
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
+
+build:
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o diagnos ./cmd/diagnos
+
+test:
+	go test ./...
+
+bench:
+	go test -bench=. -benchmem ./internal/engine/... ./internal/procfs/...
+
+test-race:
+	go test -race ./...
+
+vet:
+	go vet ./...
+
+fmt:
+	find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -w
+
+fmt-check:
+	@test -z "$$(find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -l)"
+
+docs:
+	mkdir -p docs
+	go run ./cmd/diagnos capabilities --markdown > docs/CAPABILITIES.md
+
+install: build
+	install -d "$(DESTDIR)$(BINDIR)"
+	install -m 0755 diagnos "$(DESTDIR)$(BINDIR)/diagnos"
+
+release:
+	rm -rf dist
+	mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_linux_amd64 ./cmd/diagnos
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_linux_arm64 ./cmd/diagnos
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_darwin_arm64 ./cmd/diagnos
+	cp app.yaml dist/app.yaml
+	chmod 0755 dist/diagnos_*
+	cd dist && sha256sum diagnos_* app.yaml > checksums.txt
+
+clean:
+	rm -rf dist
+	rm -f diagnos

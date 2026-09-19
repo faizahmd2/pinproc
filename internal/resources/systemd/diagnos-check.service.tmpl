@@ -1,0 +1,16 @@
+[Unit]
+Description=Diagnos health check
+After=network.target
+
+[Service]
+Type=oneshot
+User={{.User}}
+Group={{.User}}
+Nice=10
+IOSchedulingClass=idle
+ExecStart={{.Binary}} check --quiet --out {{.ReportDir}}
+MemoryMax=96M
+TasksMax=32
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths={{.ReportDir}}
