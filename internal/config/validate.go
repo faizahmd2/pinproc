@@ -21,9 +21,11 @@ func Validate(cfg *Config) error {
 
 	if cfg.AI.RequestLimits.MaxLinesContextFile <= 0 {
 		return fmt.Errorf("ai.request_limits.max_lines_context_file must be greater than 0")
-	}	if cfg.Engine.Budget != "fast" && cfg.Engine.Budget != "normal" && cfg.Engine.Budget != "deep" {
+	}
+	if cfg.Engine.Budget != "fast" && cfg.Engine.Budget != "normal" && cfg.Engine.Budget != "deep" {
 		return fmt.Errorf("engine.budget must be fast, normal, or deep")
-	}	if cfg.Engine.ParallelWidth < 1 {
+	}
+	if cfg.Engine.ParallelWidth < 1 {
 		cfg.Engine.ParallelWidth = 3
 	}
 	if cfg.Decision.Provider != "jev" && cfg.Decision.Provider != "llm" && cfg.Decision.Provider != "rules" {
