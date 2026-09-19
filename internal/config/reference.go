@@ -5,23 +5,33 @@ import (
 	"os"
 )
 
-const ReferenceYAML = `# diagnos configuration
-# Every setting is optional. Precedence: CLI flags > DIAGNOS_* env vars > this file > defaults.
+const ReferenceYAML = `# vm-native-diagnos configuration
+# The agent is local-only and reads the machine's OS directly.
 
+server:
+  listen: 127.0.0.1:8080
 
+engine:
+  budget: normal
+  sample_window: 1s
+  parallel_width: 3
 
+decision:
+  provider: jev
+  base_url: https://api.typesafe.ai
+  model: jev-latest
+  timeout: 10s
 
-ai:
-  # provider: anthropic # anthropic | openai | internal
-  # model: claude-sonnet-4-6
-  # base_url: "" # optional endpoint override
-  # API key is read from DIAGNOS_AI_API_KEY; do not commit it here.
-  request_limits: { max_lines_context_file: 250 } # Compact shared evidence budget.
+narrator:
+  enabled: true
 
-output:
-  # app-metrics writes a compact direct report. with-ai enables the full
-  # existing two-stage AI investigation.
-  report_type: with-ai
+identity:
+  docker_socket: /var/run/docker.sock
+  cloud_metadata: false
+
+agent:
+  report_dir: ~/diagnos/reports
+  retain: 50
 `
 
 func WriteReference(path string, force bool) error {
