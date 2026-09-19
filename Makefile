@@ -1,4 +1,4 @@
-.PHONY: build release test test-race vet fmt fmt-check docs install clean
+.PHONY: build release test test-race vet fmt fmt-check install clean
 
 VERSION ?= dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -27,10 +27,6 @@ fmt:
 
 fmt-check:
 	@test -z "$$(find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -l)"
-
-docs:
-	mkdir -p docs
-	go run ./cmd/diagnos capabilities --markdown > docs/CAPABILITIES.md
 
 install: build
 	install -d "$(DESTDIR)$(BINDIR)"
