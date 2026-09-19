@@ -21,30 +21,10 @@ type ApplicationLogConfig struct {
 	Paths   []string `yaml:"paths"`
 }
 
-type TargetConfig struct {
-	Host string `yaml:"host"`
-	User string `yaml:"user"`
-	Port int    `yaml:"port"`
-}
-
-type SSHConfig struct {
-	User           string        `yaml:"user"`
-	Port           int           `yaml:"port"`
-	KeyPath        string        `yaml:"key_path"`
-	KnownHosts     string        `yaml:"known_hosts"`
-	HostKeyPolicy  string        `yaml:"host_key_policy"`
-	JumpHosts      []string      `yaml:"jump_hosts"`
-	ConnectTimeout time.Duration `yaml:"connect_timeout"`
-	CommandTimeout time.Duration `yaml:"command_timeout"`
-	MaxParallel    int           `yaml:"max_parallel"`
-	MaxOutputBytes int64         `yaml:"max_output_bytes"`
-}
-
 type EngineConfig struct {
-	Budget         string        `yaml:"budget"`
-	SampleWindow   time.Duration `yaml:"sample_window"`
-	RemoteMaxLevel int           `yaml:"remote_max_level"`
-	ParallelWidth  int           `yaml:"parallel_width"`
+	Budget        string        `yaml:"budget"`
+	SampleWindow  time.Duration `yaml:"sample_window"`
+	ParallelWidth int           `yaml:"parallel_width"`
 }
 type DecisionConfig struct {
 	Provider string        `yaml:"provider"`
@@ -67,13 +47,11 @@ type AgentConfig struct {
 }
 
 type Config struct {
-	SSH SSHConfig `yaml:"ssh"`
 	App struct {
 		Name     string `yaml:"name"`
 		LogLevel string `yaml:"log_level"`
 	} `yaml:"app"`
 
-	Targets map[string]TargetConfig `yaml:"targets"`
 
 	AI struct {
 		Provider string                 `yaml:"provider"`
@@ -97,6 +75,10 @@ type Config struct {
 	Narrator NarratorConfig `yaml:"narrator"`
 	Identity IdentityConfig `yaml:"identity"`
 	Agent    AgentConfig    `yaml:"agent"`
+
+	Server struct {
+		Listen string `yaml:"listen"`
+	} `yaml:"server"`
 
 	Output struct {
 		ReportType string `yaml:"report_type"`
@@ -167,23 +149,16 @@ func defaults() Config {
 	var cfg Config
 	cfg.App.Name = "diagnos"
 	cfg.App.LogLevel = "info"
-	cfg.SSH.Port = 22
-	cfg.SSH.HostKeyPolicy = "prompt"
-	cfg.SSH.ConnectTimeout = 10 * time.Second
-	cfg.SSH.CommandTimeout = 30 * time.Second
-	cfg.SSH.MaxParallel = 4
-	cfg.SSH.MaxOutputBytes = 1024 * 1024
-	// The direct report is intentionally compact; this is the shared evidence
+		// The direct report is intentionally compact; this is the shared evidence
 	// budget used by both report modes.
 	cfg.AI.RequestLimits.MaxLinesContextFile = 250
 	cfg.Output.ReportType = "app-metrics"
-	cfg.Output.Directory = "~/diagnos/debug"
+	cfg.Output.Directory = "~/diagnos/reports"
 	cfg.AI.Model = "gemini/gemini-3.5-flash-lite"
 	cfg.Engine.Budget = "normal"
 	cfg.Engine.SampleWindow = time.Second
-	cfg.Engine.RemoteMaxLevel = 2
-	cfg.Engine.ParallelWidth = 3
-	cfg.Decision.Provider = "rules"
+		cfg.Engine.ParallelWidth = 3
+	cfg.Decision.Provider = "jev"
 	cfg.Decision.BaseURL = "https://api.typesafe.ai"
 	cfg.Decision.Model = "jev-latest"
 	cfg.Decision.Timeout = 10 * time.Second
@@ -191,23 +166,14 @@ func defaults() Config {
 	cfg.Narrator.Model = cfg.AI.Model
 	cfg.Identity.DockerSocket = "/var/run/docker.sock"
 	cfg.Agent.ReportDir = "~/diagnos/reports"
+	cfg.Server.Listen = "127.0.0.1:8080"
 	cfg.Agent.Retain = 50
 	cfg.AI.Models = map[string]ModelConfig{
 		cfg.AI.Model: {BaseURL: "https://generativelanguage.googleapis.com", APIKeyEnv: "DIAGNOS_AI_API_KEY"},
 	}
 	return cfg
 }
-func applyEnv(cfg *Config) {
-	if v := os.Getenv("DIAGNOS_SSH_PORT"); v != "" {
-		fmt.Sscanf(v, "%d", &cfg.SSH.Port)
-	}
-	if v := os.Getenv("DIAGNOS_SSH_USER"); v != "" {
-		cfg.SSH.User = v
-	}
-	if v := os.Getenv("DIAGNOS_SSH_KEY_PATH"); v != "" {
-		cfg.SSH.KeyPath = v
-	}
-	if v := os.Getenv("TYPESAFE_API_KEY"); v != "" {
+func applyEnv(cfg *Config) {	if v := os.Getenv("TYPESAFE_API_KEY"); v != "" {
 		cfg.Decision.APIKey = v
 	}
 	if v := os.Getenv("DIAGNOS_DECISION_API_KEY"); v != "" {
@@ -238,7 +204,6 @@ func applyEnv(cfg *Config) {
 			}
 		}
 	}
-	cfg.SSH.KeyPath = strings.TrimSpace(cfg.SSH.KeyPath)
 }
 
 func ResolveOutputDirectory(path string) (string, error) {
