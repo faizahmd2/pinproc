@@ -132,9 +132,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	state, _ := MarshalState(inv, signals, inv.Path)
 	ans, err := e.opt.Decision.Ask(ctx, json.RawMessage(state), decision.AssessQuestions())
 	inv.Spent.DecisionCalls++
+	decidedBy := "model:" + e.opt.Decision.Name()
 	if err != nil {
 		e.opt.Logger.Warn("decision provider failed; falling back", "error", err)
 		ans, _ = drules.New().Ask(ctx, json.RawMessage(state), decision.AssessQuestions())
+		decidedBy = "rules:jev_unavailable"
 	}
 	choice := ""
 	if a, ok := ans["primary_dimension"]; ok {
@@ -144,7 +146,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		Depth:      contract.L1Machine,
 		Capability: "machine.sweep",
 		Scope:      "machine",
-		DecidedBy:  "model:" + e.opt.Decision.Name(),
+		DecidedBy:  decidedBy,
 		Reason:     "primary=" + choice,
 		Bytes:      inv.Spent.Bytes,
 		Duration:   e.opt.Clock().Sub(start),
@@ -257,7 +259,15 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		answers, err := e.opt.Decision.Ask(ctx, json.RawMessage(state), decision.NextQuestions(candidateKeys(legal)))
 		inv.Spent.DecisionCalls++
 		if err != nil {
+			e.opt.Logger.Warn("decision provider failed; falling back", "error", err)
 			answers, _ = drules.New().Ask(ctx, json.RawMessage(state), decision.NextQuestions(candidateKeys(legal)))
+			inv.Path = append(inv.Path, contract.Step{
+				Depth:      contract.L1Machine,
+				Capability: "decision.next",
+				Scope:      "machine",
+				DecidedBy:  "rules:jev_unavailable",
+				Err:        err.Error(),
+			})
 		}
 		if a, ok := answers["explains_anomaly"]; ok && a.Noul >= 0.75 && a.Confidence >= 0.5 {
 			inv.StopReason = contract.StopSufficientEvidence
