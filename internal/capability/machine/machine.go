@@ -1,10 +1,10 @@
 package machine
 
 import (
-	"github.com/faizahmd2/diagnos/internal/capability/spec"
-	"github.com/faizahmd2/diagnos/internal/contract"
-	"github.com/faizahmd2/diagnos/internal/procfs"
-	"github.com/faizahmd2/diagnos/internal/source"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability/spec"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/procfs"
+	"github.com/faizahmd2/vm-native-diagnos/internal/source"
 	"os"
 	"path/filepath"
 	"sort"

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/faizahmd2/diagnos/internal/executor"
+	"github.com/faizahmd2/vm-native-diagnos/internal/executor"
 )
 
 type SystemCollector struct {

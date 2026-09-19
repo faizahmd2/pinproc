@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/faizahmd2/diagnos/internal/contract"
-	"github.com/faizahmd2/diagnos/internal/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
 )
 
 // ModelEvidence is the bounded evidence view exposed to a decision provider.

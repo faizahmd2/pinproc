@@ -2,8 +2,8 @@ package capability
 
 import (
 	"fmt"
-	"github.com/faizahmd2/diagnos/internal/capability/spec"
-	"github.com/faizahmd2/diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability/spec"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 	"regexp"
 	"sort"
 )

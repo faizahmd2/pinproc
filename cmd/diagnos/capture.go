@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/faizahmd2/diagnos/internal/source"
+	"github.com/faizahmd2/vm-native-diagnos/internal/source"
 	"github.com/spf13/cobra"
 	"time"
 )

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/faizahmd2/diagnos/internal/config"
-	"github.com/faizahmd2/diagnos/internal/contract"
-	"github.com/faizahmd2/diagnos/internal/source"
+	"github.com/faizahmd2/vm-native-diagnos/internal/config"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/source"
 )
 
 func targetSource(ctx context.Context, host string) (source.Source, func(), *config.Config, error) {

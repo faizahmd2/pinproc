@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/faizahmd2/diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 	"os"
 	"path/filepath"
 	"strings"

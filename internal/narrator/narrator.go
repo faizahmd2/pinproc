@@ -3,7 +3,7 @@ package narrator
 import (
 	"context"
 	"fmt"
-	"github.com/faizahmd2/diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 	"strings"
 )
 

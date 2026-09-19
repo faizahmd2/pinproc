@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/faizahmd2/diagnos/internal/capability"
-	"github.com/faizahmd2/diagnos/internal/contract"
-	drules "github.com/faizahmd2/diagnos/internal/decision/rules"
-	"github.com/faizahmd2/diagnos/internal/engine"
-	"github.com/faizahmd2/diagnos/internal/rules"
-	"github.com/faizahmd2/diagnos/internal/source"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	drules "github.com/faizahmd2/vm-native-diagnos/internal/decision/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/engine"
+	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/source"
 	"github.com/spf13/cobra"
 )
 

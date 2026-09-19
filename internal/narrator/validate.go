@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/faizahmd2/diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 )
 
 var tokenRE = regexp.MustCompile("[A-Za-z0-9_./:-]+")

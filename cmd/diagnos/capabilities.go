@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/faizahmd2/diagnos/internal/capability"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
 	"github.com/spf13/cobra"
 )
 

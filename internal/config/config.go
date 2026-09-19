@@ -52,7 +52,6 @@ type Config struct {
 		LogLevel string `yaml:"log_level"`
 	} `yaml:"app"`
 
-
 	AI struct {
 		Provider string                 `yaml:"provider"`
 		APIKey   string                 `yaml:"api_key"`
@@ -149,7 +148,7 @@ func defaults() Config {
 	var cfg Config
 	cfg.App.Name = "diagnos"
 	cfg.App.LogLevel = "info"
-		// The direct report is intentionally compact; this is the shared evidence
+	// The direct report is intentionally compact; this is the shared evidence
 	// budget used by both report modes.
 	cfg.AI.RequestLimits.MaxLinesContextFile = 250
 	cfg.Output.ReportType = "app-metrics"
@@ -157,7 +156,7 @@ func defaults() Config {
 	cfg.AI.Model = "gemini/gemini-3.5-flash-lite"
 	cfg.Engine.Budget = "normal"
 	cfg.Engine.SampleWindow = time.Second
-		cfg.Engine.ParallelWidth = 3
+	cfg.Engine.ParallelWidth = 3
 	cfg.Decision.Provider = "jev"
 	cfg.Decision.BaseURL = "https://api.typesafe.ai"
 	cfg.Decision.Model = "jev-latest"
@@ -173,7 +172,8 @@ func defaults() Config {
 	}
 	return cfg
 }
-func applyEnv(cfg *Config) {	if v := os.Getenv("TYPESAFE_API_KEY"); v != "" {
+func applyEnv(cfg *Config) {
+	if v := os.Getenv("TYPESAFE_API_KEY"); v != "" {
 		cfg.Decision.APIKey = v
 	}
 	if v := os.Getenv("DIAGNOS_DECISION_API_KEY"); v != "" {

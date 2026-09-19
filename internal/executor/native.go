@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/faizahmd2/diagnos/internal/transport"
+	"github.com/faizahmd2/vm-native-diagnos/internal/transport"
 )
 
 // NativeExecutor keeps the small Run(string, timeout) surface used by the

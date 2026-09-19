@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/faizahmd2/diagnos/internal/config"
-	"github.com/faizahmd2/diagnos/internal/decision"
-	"github.com/faizahmd2/diagnos/internal/decision/jev"
-	drules "github.com/faizahmd2/diagnos/internal/decision/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/config"
+	"github.com/faizahmd2/vm-native-diagnos/internal/decision"
+	"github.com/faizahmd2/vm-native-diagnos/internal/decision/jev"
+	drules "github.com/faizahmd2/vm-native-diagnos/internal/decision/rules"
 )
 
 // makeDecisionProvider builds an AI-service-neutral decision provider.

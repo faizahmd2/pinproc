@@ -3,11 +3,11 @@ package capability
 import (
 	"fmt"
 
-	"github.com/faizahmd2/diagnos/internal/capability/cgroup"
-	"github.com/faizahmd2/diagnos/internal/capability/machine"
-	"github.com/faizahmd2/diagnos/internal/capability/process"
-	"github.com/faizahmd2/diagnos/internal/capability/thread"
-	"github.com/faizahmd2/diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability/cgroup"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability/machine"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability/process"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability/thread"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 )
 
 // BuildBuiltin creates the V2 capability graph.

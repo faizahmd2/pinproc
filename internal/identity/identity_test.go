@@ -2,7 +2,7 @@ package identity
 
 import (
 	"context"
-	"github.com/faizahmd2/diagnos/internal/source"
+	"github.com/faizahmd2/vm-native-diagnos/internal/source"
 	"os"
 	"path/filepath"
 	"testing"

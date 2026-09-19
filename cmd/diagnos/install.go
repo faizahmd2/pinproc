@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/faizahmd2/diagnos/internal/resources"
+	"github.com/faizahmd2/vm-native-diagnos/internal/resources"
 	"github.com/spf13/cobra"
 )
 

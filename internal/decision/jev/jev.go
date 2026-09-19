@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/faizahmd2/diagnos/internal/decision"
+	"github.com/faizahmd2/vm-native-diagnos/internal/decision"
 	"io"
 	"net/http"
 	"strings"

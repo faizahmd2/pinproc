@@ -1,8 +1,8 @@
 package engine
 
 import (
-	"github.com/faizahmd2/diagnos/internal/contract"
-	"github.com/faizahmd2/diagnos/internal/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
 	"sort"
 )
 

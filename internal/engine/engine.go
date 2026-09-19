@@ -9,26 +9,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/faizahmd2/diagnos/internal/capability"
-	"github.com/faizahmd2/diagnos/internal/contract"
-	"github.com/faizahmd2/diagnos/internal/decision"
-	drules "github.com/faizahmd2/diagnos/internal/decision/rules"
-	"github.com/faizahmd2/diagnos/internal/identity"
-	"github.com/faizahmd2/diagnos/internal/rules"
-	"github.com/faizahmd2/diagnos/internal/source"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/decision"
+	drules "github.com/faizahmd2/vm-native-diagnos/internal/decision/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/identity"
+	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/source"
 )
 
 // Options configures the bounded investigation engine.
 type Options struct {
-	Source         source.Source
-	Registry       *capability.Registry
-	Rules          []rules.Rule
-	Decision       decision.Provider
-	Identity       *identity.Resolver
-	Budget         contract.Budget
-	Clock          func() time.Time
-	Logger         *slog.Logger
-	ParallelWidth  int
+	Source        source.Source
+	Registry      *capability.Registry
+	Rules         []rules.Rule
+	Decision      decision.Provider
+	Identity      *identity.Resolver
+	Budget        contract.Budget
+	Clock         func() time.Time
+	Logger        *slog.Logger
+	ParallelWidth int
 }
 
 // Request starts one investigation.

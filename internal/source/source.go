@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/faizahmd2/diagnos/internal/contract"
+	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 )
 
 // ReadKind describes how a source resolves a read request.
