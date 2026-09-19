@@ -1,4 +1,4 @@
-.PHONY: build release test test-race vet fmt fmt-check install clean
+.PHONY: build release test test-race bench vet fmt fmt-check install clean
 
 VERSION ?= dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
