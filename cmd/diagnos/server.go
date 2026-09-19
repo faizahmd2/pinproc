@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -72,7 +74,7 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		defer r.Body.Close()
 		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-		if err := dec.Decode(&req); err != nil && err.Error() != "EOF" {
+		if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return
 		}
