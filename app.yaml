@@ -1,6 +1,6 @@
 # vm-native-diagnos configuration.
 # The agent is local-only: it reads /proc, /sys, cgroups and related kernel state.
-# AI decisions use the configured TypeSafe/Jev endpoint.
+# Jev is the V2 structured decision provider; rules remain the deterministic fallback.
 
 app:
   name: vm-native-diagnos
@@ -22,25 +22,9 @@ decision:
 
 narrator:
   enabled: true
-  model: gemini/gemini-3.5-flash-lite
-
-identity:
-  docker_socket: /var/run/docker.sock
-  cloud_metadata: false
 
 agent:
   report_dir: ~/diagnos/reports
-  retain: 50
-
-ai:
-  model: gemini/gemini-3.5-flash-lite
-  models:
-    gemini/gemini-3.5-flash-lite:
-      base_url: https://generativelanguage.googleapis.com
-      api_key_env: GEMINI_API_KEY
-  request_limits:
-    max_lines_context_file: 250
 
 output:
-  report_type: with-ai
   directory: ~/diagnos/reports
