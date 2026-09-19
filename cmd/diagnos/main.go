@@ -16,13 +16,16 @@ var version = "dev"
 var commit = "none"
 var date = "unknown"
 
-// main starts the V2 CLI.
+// main starts the local native agent.
 func main() {
+	if len(os.Args) == 1 {
+		os.Args = append(os.Args, "serve")
+	}
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	druntime.Local(logger)
 	root := &cobra.Command{Use: "diagnos", Short: "Diagnos — adaptive Linux resource investigation", Version: version}
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config path")
-	root.AddCommand(newCaptureCmd(), newReplayCmd(), newCheckCmd(), newInvestigateCmd(), newCapabilitiesCmd(), newDoctorCmd(), newInstallCmd())
+	root.AddCommand(newServeCmd(), newInvestigateCmd())
 	if err := root.Execute(); err != nil {
 		var ce commandError
 		if errors.As(err, &ce) {
