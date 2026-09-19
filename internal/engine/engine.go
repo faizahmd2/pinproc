@@ -29,7 +29,6 @@ type Options struct {
 	Clock          func() time.Time
 	Logger         *slog.Logger
 	ParallelWidth  int
-	RemoteMaxLevel int
 }
 
 // Request starts one investigation.
@@ -62,9 +61,6 @@ func New(o Options) *Engine {
 	}
 	if o.ParallelWidth > 3 {
 		o.ParallelWidth = 3
-	}
-	if o.RemoteMaxLevel < 1 {
-		o.RemoteMaxLevel = 2
 	}
 	return &Engine{opt: o}
 }
@@ -173,13 +169,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 			cap, ok := e.opt.Registry.Get(c.Capability)
 			if !ok {
 				continue
-			}
-			if strings.HasPrefix(e.opt.Source.Name(), "ssh:") && int(cap.Level) > e.opt.RemoteMaxLevel {
-				c.Reason = fmt.Sprintf("remote level limit L%d", e.opt.RemoteMaxLevel)
-				inv.NotInvestigated = appendCandidateUnique(inv.NotInvestigated, c)
-				continue
-			}
-			if err := capability.ValidateScope(cap, c.Scope, inv); err != nil {
+			}			if err := capability.ValidateScope(cap, c.Scope, inv); err != nil {
 				inv.Path = append(inv.Path, contract.Step{
 					Depth:      cap.Level,
 					Capability: c.Capability,
