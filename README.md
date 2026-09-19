@@ -1,117 +1,81 @@
-# Diagnos
+# vm-native-diagnos
 
-Diagnos V2 is a read-only Linux resource investigation engine.
+`vm-native-diagnos` is a tiny, read-only Linux machine investigation agent.
 
-It does not use eBPF. V2 reads /proc, /sys, cgroup files, and other read-only OS state directly; remote hosts are inspected with bounded native SSH and one batched script per sampling step.
+It is the V2 investigation engine moved into its own repository. The agent runs **on the machine being investigated** and reads `/proc`, `/sys`, cgroups, process/thread state, sockets, limits and other read-only OS interfaces directly.
 
-## Investigation model
+There is no SSH transport, no eBPF, no Prometheus, no node_exporter and no historical telemetry dependency.
 
-```text
-machine
-  ├─ CPU / memory / block I/O / network / limits        (cheap L1)
-  │
-  └─ resource owner
-       ├─ process attribution                            (L2)
-       ├─ cgroup accounting                              (L2)
-       └─ thread attribution                             (L3)
-             ├─ memory maps / descriptor inventory       (L4)
-             └─ sockets / deeper mechanisms              (L4+)
-```
-
-The AI layer is optional and provider-agnostic. The engine exposes bounded Choice, Noul, and Score decisions through internal/decision.Provider. The default provider is deterministic rules; TypeSafe Jev is an optional adapter.
-
-Every investigation has limits for depth, steps, wall time, bytes, and model calls.
-
-## Install
-
-Build locally:
-
-```sh
-git checkout v2-investigation-engine
-make build
-sudo install -m 0755 diagnos /usr/local/bin/diagnos
-sudo /usr/local/bin/diagnos install --user diagnos --interval 10m --dir /var/lib/diagnos/reports
-```
-
-## Basic checks
-
-```sh
-diagnos doctor
-diagnos capabilities
-```
-
-## Run a local investigation
-
-```sh
-diagnos investigate localhost --dimension cpu --budget fast --out ./report
-```
-
-The result contains:
+## Runtime flow
 
 ```text
-report/
-├── investigation.json
-└── report.md
+HTTP POST /trigger
+       │
+       ▼
+local /proc + /sys + cgroups
+       │
+       ▼
+bounded V2 adaptive investigation
+       │
+       ├── deterministic rules
+       ├── registered capabilities
+       └── Jev AI decisions when deeper investigation is warranted
+       │
+       ▼
+investigation.json + report.md
+       │
+       ▼
+HTTP GET /report
 ```
 
-investigation.json is the stable machine-readable contract. report.md is the developer-facing report with evidence, attribution path, limitations, and verification hints.
+Short sampling windows are only used to calculate realtime counter deltas such as CPU and I/O rates. Nothing is queried from historical telemetry.
 
-## Cron / health-check mode
+## HTTP API
 
-The cheap health check performs only the machine-level sweep. It exits 0 when no material anomaly is detected and exits 1 when investigation should be triggered.
+The binary starts the server when invoked without a subcommand.
 
-```sh
-*/10 * * * * /usr/local/bin/diagnos check --json > /var/log/diagnos-check.json
+### Trigger
+
+```http
+POST /trigger
+Content-Type: application/json
+
+{
+  "hint": "request latency increased",
+  "dimension": "cpu",
+  "budget": "normal",
+  "trigger": "incident"
+}
 ```
 
-Grafana/Prometheus alerts can invoke the full investigation command:
+The investigation runs locally and the latest report is persisted. The response contains the investigation ID and points to `/report`.
 
-```sh
-diagnos investigate production-vm \
-  --trigger 'grafana: request_rate=1000/s' \
-  --hint 'request rate spike' \
-  --dimension cpu
+### Report
+
+```http
+GET /report
 ```
 
-## Remote targets
+Returns the latest stable JSON investigation contract.
 
-Configure an alias in app.yaml:
+Default listen address:
+
+```text
+127.0.0.1:8080
+```
+
+Configure it in `app.yaml`:
 
 ```yaml
-targets:
-  production-vm:
-    host: 10.0.0.10
-    user: ubuntu
-    port: 22
+server:
+  listen: :8080
 ```
 
-Then:
+The default localhost binding is intentional because `/trigger` is an operational endpoint.
 
-```sh
-diagnos investigate production-vm --budget normal --out ./report
-```
+## AI
 
-The engine itself does not require Kubernetes. Container and Kubernetes workloads are attributed when Linux cgroup/process identity exposes the relationship.
-
-## Optional Prometheus baseline
-
-Prometheus is not required for direct diagnosis.
-
-When configured, historical Prometheus values are used as additional context to decide whether current observations are unusual. They do not replace local OS evidence.
-
-```yaml
-telemetry:
-  prometheus:
-    url: http://prometheus:9090
-    auth:
-      type: none
-    baseline_queries:
-      cpu_utilization: 100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100
-```
-
-## Optional TypeSafe decision provider
-
-Keep the engine independent of the provider:
+AI decision-making is enabled by default through the bounded `decision.Provider` interface.
 
 ```yaml
 decision:
@@ -121,32 +85,57 @@ decision:
   timeout: 10s
 ```
 
-Set TYPESAFE_API_KEY in the environment.
-
-Without a provider key, use --no-ai or leave decision.provider: rules.
-
-## Production controls
-
-V2 is deliberately bounded:
-
-- no eBPF
-- no mutation of target state
-- no arbitrary model-generated shell commands
-- model can select only registered capabilities
-- selected PID/TID/cgroup scopes must have been observed previously
-- remote sampling is batched and output-capped
-- reports are written atomically
-- temporary fixture replay is supported for repeatable tests
-
-## Development
+Set:
 
 ```sh
-make fmt
-make fmt-check
-make vet
-make test
-make test-race
-make build
+export TYPESAFE_API_KEY=...
 ```
 
-The V2 tree is self-contained under cmd/diagnos and internal; legacy V1 catalog/planner/CLI artifacts are removed at the V2 milestone boundary.
+If the AI service is unavailable, the investigation falls back to deterministic rule decisions rather than failing the machine analysis.
+
+## Reports
+
+Reports are written to:
+
+```text
+~/diagnos/reports/
+├── investigation.json
+└── report.md
+```
+
+The JSON document is the stable machine-readable contract. The Markdown document is the human-readable report.
+
+## Build
+
+```sh
+make build
+sudo install -m 0755 diagnos /usr/local/bin/vm-native-diagnos
+```
+
+Run explicitly:
+
+```sh
+vm-native-diagnos serve
+```
+
+Or simply:
+
+```sh
+vm-native-diagnos
+```
+
+The latter starts the server using the default configuration.
+
+## Design constraints
+
+- read-only OS investigation
+- local machine only
+- no SSH or remote command execution
+- no eBPF
+- no Prometheus/node_exporter
+- no historical telemetry window queries
+- bounded capability descent
+- model may choose only registered capabilities
+- PID/TID/cgroup scopes must be observed before deeper collection
+- bounded bytes, depth, steps, wall time and AI calls
+- atomic report writes
