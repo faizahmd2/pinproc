@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -27,10 +26,6 @@ func main() {
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config path")
 	root.AddCommand(newServeCmd(), newInvestigateCmd(), newCaptureCmd(), newReplayCmd())
 	if err := root.Execute(); err != nil {
-		var ce commandError
-		if errors.As(err, &ce) {
-			os.Exit(int(ce))
-		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
