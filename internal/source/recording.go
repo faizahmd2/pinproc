@@ -3,70 +3,64 @@ package source
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 )
 
-type recordingRaw struct {
-	Key string
-	Path string
-	Data []byte
-	Err string
-}
-type recordingSnapshot struct {
-	At time.Time
-	Reads map[string][]recordingRaw
-	Bytes int64
-}
-type recordingEvent struct {
-	Kind string
-	Snapshot *recordingSnapshot
-	Sample *struct{T0, T1 recordingSnapshot; Window time.Duration}
-	Facts *contract.Facts
-	Err string
-}
-type Recording struct {
-	Events []recordingEvent
-}
-
 type RecordingSource struct {
 	Inner Source
-	Rec *Recording
+	Dir string
+	mu sync.Mutex
+	seq int
 }
 
-func NewRecording(inner Source) *RecordingSource { return &RecordingSource{Inner:inner,Rec:&Recording{}} }
-
+func NewRecording(inner Source, dir string) *RecordingSource {
+	return &RecordingSource{Inner:inner,Dir:dir}
+}
 func (s *RecordingSource) Name() string { return "recording("+s.Inner.Name()+")" }
-func (s *RecordingSource) Facts(ctx context.Context)(contract.Facts,error){
+func (s *RecordingSource) Facts(ctx context.Context) (contract.Facts,error) {
 	f,err:=s.Inner.Facts(ctx)
-	s.Rec.Events=append(s.Rec.Events,recordingEvent{Kind:"facts",Facts:&f,Err:errString(err)})
+	if err==nil {
+		_ = os.MkdirAll(s.Dir,0755)
+		if b,e:=json.MarshalIndent(f,"","  ");e==nil{_ = os.WriteFile(filepath.Join(s.Dir,"meta.json"),append(b,'\n'),0644)}
+	}
 	return f,err
 }
-func (s *RecordingSource) Snapshot(ctx context.Context, reads []Read)(Snapshot,error){
+func (s *RecordingSource) Snapshot(ctx context.Context, reads []Read) (Snapshot,error) {
 	x,err:=s.Inner.Snapshot(ctx,reads)
-	s.Rec.Events=append(s.Rec.Events,recordingEvent{Kind:"snapshot",Snapshot:packSnapshot(x),Err:errString(err)})
+	if e:=s.saveSnapshot(x);err==nil&&e!=nil{err=e}
 	return x,err
 }
-func (s *RecordingSource) Sample(ctx context.Context, reads []Read, w time.Duration)(Sample,error){
+func (s *RecordingSource) Sample(ctx context.Context, reads []Read, w time.Duration) (Sample,error) {
 	x,err:=s.Inner.Sample(ctx,reads,w)
-	y:=&struct{T0,T1 recordingSnapshot;Window time.Duration}{T0:*packSnapshot(x.T0),T1:*packSnapshot(x.T1),Window:x.Window}
-	s.Rec.Events=append(s.Rec.Events,recordingEvent{Kind:"sample",Sample:y,Err:errString(err)})
+	if e:=s.saveSnapshot(x.T0);err==nil&&e!=nil{err=e}
+	if e:=s.saveSnapshot(x.T1);err==nil&&e!=nil{err=e}
 	return x,err
 }
-func (s *RecordingSource) Close()error{return s.Inner.Close()}
-func (s *RecordingSource) Save(path string)error{
-	if err:=os.MkdirAll(filepathDir(path),0755);err!=nil{return err}
-	b,err:=json.MarshalIndent(s.Rec,"","  ");if err!=nil{return err}
-	return os.WriteFile(path,append(b,'\n'),0644)
+func (s *RecordingSource) Close() error { return s.Inner.Close() }
+
+func (s *RecordingSource) saveSnapshot(snap Snapshot) error {
+	s.mu.Lock(); defer s.mu.Unlock()
+	root:=filepath.Join(s.Dir,fmt.Sprintf("snapshot-%03d",s.seq));s.seq++
+	if err:=os.MkdirAll(filepath.Join(root,"data"),0755);err!=nil{return err}
+	type item struct{Key string `json:"key"`;Path string `json:"path"`;Error string `json:"error,omitempty"`}
+	idx:=struct{At time.Time `json:"at"`;Bytes int64 `json:"bytes"`;Reads []item `json:"reads"`}{At:snap.At,Bytes:snap.Bytes}
+	for _,rows:=range snap.Reads{
+		for _,raw:=range rows{
+			idx.Reads=append(idx.Reads,item{Key:raw.Key,Path:raw.Path,Error:errorString(raw.Err)})
+			rel:=strings.TrimPrefix(filepath.Clean(raw.Path),string(filepath.Separator))
+			path:=filepath.Join(root,"data",rel)
+			if raw.Path!=""{if err:=os.MkdirAll(filepath.Dir(path),0755);err==nil{_ = os.WriteFile(path,raw.Data,0644)}}
+		}
+	}
+	b,err:=json.MarshalIndent(idx,"","  ");if err!=nil{return err}
+	return os.WriteFile(filepath.Join(root,"index.json"),append(b,'\n'),0644)
 }
-func LoadRecording(path string)(*Recording,error){
-	b,err:=os.ReadFile(path);if err!=nil{return nil,err};var r Recording
-	if err:=json.Unmarshal(b,&r);err!=nil{return nil,err};return &r,nil
-}
-func errString(err error)string{if err==nil{return ""};return err.Error()}
-func packSnapshot(s Snapshot)*recordingSnapshot{r:=&recordingSnapshot{At:s.At,Reads:map[string][]recordingRaw{},Bytes:s.Bytes};for k,rows:=range s.Reads{for _,x:=range rows{r.Reads[k]=append(r.Reads[k],recordingRaw{Key:x.Key,Path:x.Path,Data:x.Data,Err:errString(x.Err)})}};return r}
-func filepathDir(path string)string{for i:=len(path)-1;i>=0;i--{if path[i]=='/'{if i==0{return "/"};return path[:i]}};return "."}
-var _ = errors.New
+func errorString(err error)string{if err==nil{return ""};return err.Error()}
+var _ = strconv.Itoa
