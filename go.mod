@@ -1,4 +1,4 @@
-module github.com/faizahmd2/vm-native-diagnos
+module github.com/faizahmd2/pinproc
 
 go 1.26.4
 
