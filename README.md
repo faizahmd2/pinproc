@@ -75,7 +75,7 @@ The default service settings are:
     output:
       directory: /var/lib/pinproc/reports
 
-When service.user is empty, installation uses the user who invoked sudo, for example ubuntu. When service.user is set to diagnos, the installer creates that dedicated service account when it does not already exist.
+When service.user is empty, installation uses the user who invoked sudo, for example ubuntu. When service.user is set to pinproc, the installer creates that dedicated service account when it does not already exist.
 
 ### 3. Install and start the service
 
@@ -131,13 +131,13 @@ Then install with:
 
 The service runs as the invoking account rather than as root.
 
-### Use a dedicated diagnos account
+### Use a dedicated pinproc account
 
 For a dedicated account, set:
 
     service:
-      user: diagnos
-      group: diagnos
+      user: pinproc
+      group: pinproc
 
 Then run the same install command.
 
@@ -149,10 +149,10 @@ This is the recommended deployment shape when you want the inspection isolated f
 
 The installer can create this account automatically. When you prefer to create it yourself, run:
 
-    sudo groupadd --system diagnos
-    sudo useradd --system --gid diagnos --home-dir /var/lib/pinproc --no-create-home --shell /usr/sbin/nologin diagnos
+    sudo groupadd --system pinproc
+    sudo useradd --system --gid pinproc --home-dir /var/lib/pinproc --no-create-home --shell /usr/sbin/nologin pinproc
 
-Then keep service.user and service.group set to diagnos and run the service install command. Existing accounts are reused; the installer does not delete them.
+Then keep service.user and service.group set to pinproc and run the service install command. Existing accounts are reused; the installer does not delete them.
 
 ## Trigger an inspection
 
@@ -306,9 +306,9 @@ The deployed service uses service run and starts inspections only through POST /
 
 The repository also contains developer-oriented one-shot commands:
 
-    ./diagnos investigate localhost --no-ai --budget fast
-    ./diagnos capture localhost --no-ai --budget fast --out ./captures
-    ./diagnos replay ./captures/<inspection> --budget fast --out ./replay-output
+    ./pinproc investigate localhost --no-ai --budget fast
+    ./pinproc capture localhost --no-ai --budget fast --out ./captures
+    ./pinproc replay ./captures/<inspection> --budget fast --out ./replay-output
 
 These are useful for local debugging and fixture creation; they are not the production service integration path.
 
