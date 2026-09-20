@@ -3,7 +3,7 @@ package rules
 import (
 	"context"
 	"encoding/json"
-	"github.com/faizahmd2/vm-native-diagnos/internal/decision"
+	"github.com/faizahmd2/pinproc/internal/decision"
 	"sort"
 	"strings"
 )
