@@ -24,6 +24,10 @@ type DecisionConfig struct {
 	Timeout  time.Duration `yaml:"timeout"`
 }
 
+type SourceConfig struct {
+	ReadTimeout time.Duration `yaml:"read_timeout"`
+}
+
 type NarratorConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
@@ -37,9 +41,12 @@ type Config struct {
 	Engine   EngineConfig   `yaml:"engine"`
 	Decision DecisionConfig `yaml:"decision"`
 	Narrator NarratorConfig `yaml:"narrator"`
+	Source   SourceConfig   `yaml:"source"`
+	Report   struct { MaxFindings int `yaml:"max_findings"` } `yaml:"report"`
 
 	Server struct {
 		Listen string `yaml:"listen"`
+		APIKey string `yaml:"api_key"`
 	} `yaml:"server"`
 
 	Output struct {
@@ -108,6 +115,8 @@ func defaults() Config {
 	cfg.Decision.Model = "jev-latest"
 	cfg.Decision.Timeout = 10 * time.Second
 	cfg.Narrator.Enabled = true
+	cfg.Source.ReadTimeout = 2 * time.Second
+	cfg.Report.MaxFindings = 5
 	cfg.Server.Listen = "127.0.0.1:8080"
 	return cfg
 }
@@ -118,6 +127,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("DIAGNOS_DECISION_API_KEY"); v != "" {
 		cfg.Decision.APIKey = v
+	}
+	if v := os.Getenv("DIAGNOS_API_KEY"); v != "" {
+		cfg.Server.APIKey = v
 	}
 	if v := os.Getenv("DIAGNOS_ENGINE_BUDGET"); v != "" {
 		cfg.Engine.Budget = v
