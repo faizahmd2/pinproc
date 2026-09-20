@@ -3,12 +3,12 @@ package capability
 import (
 	"fmt"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/capability/cgroup"
-	"github.com/faizahmd2/vm-native-diagnos/internal/capability/fsx"
-	"github.com/faizahmd2/vm-native-diagnos/internal/capability/machine"
-	"github.com/faizahmd2/vm-native-diagnos/internal/capability/process"
-	"github.com/faizahmd2/vm-native-diagnos/internal/capability/thread"
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/pinproc/internal/capability/cgroup"
+	"github.com/faizahmd2/pinproc/internal/capability/fsx"
+	"github.com/faizahmd2/pinproc/internal/capability/machine"
+	"github.com/faizahmd2/pinproc/internal/capability/process"
+	"github.com/faizahmd2/pinproc/internal/capability/thread"
+	"github.com/faizahmd2/pinproc/internal/contract"
 )
 
 // BuildBuiltin creates the V2 capability graph.
