@@ -36,6 +36,7 @@ type Options struct {
 	ParallelWidth int
 	MaxFindings   int
 	DecisionNotice string
+	Progress      func(string)
 }
 
 // Request starts one investigation.
@@ -84,6 +85,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		return nil, fmt.Errorf("engine requires source, registry and decision")
 	}
 	start := e.opt.Clock()
+	e.progress("started")
 	e.opt.Logger.Info("investigation started", "id", req.ID, "host", req.Host, "budget", e.opt.Budget.MaxWall)
 	defer func() { e.opt.Logger.Info("investigation finished", "id", req.ID, "elapsed", e.opt.Clock().Sub(start)) }()
 	facts, err := e.opt.Source.Facts(ctx)
@@ -113,6 +115,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		}
 	}
 
+	e.progress("machine_sweep")
 	sweep, spent, err := e.sweep(ctx, inv)
 	inv.Evidence = append(inv.Evidence, sweep...)
 	for i := range inv.Evidence {
@@ -153,6 +156,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		}
 	}
 
+	e.progress("decision")
 	state, _ := MarshalState(inv, signals, inv.Path)
 	ans, err := e.opt.Decision.Ask(ctx, json.RawMessage(state), decision.AssessQuestions())
 	inv.Spent.DecisionCalls++
@@ -177,6 +181,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		Duration:   e.opt.Clock().Sub(start),
 	})
 
+	e.progress("deep_investigation")
 	front := e.initialFrontier(signals, choice, req.Dimension)
 	visited := map[string]bool{}
 	for len(front) > 0 {
@@ -365,6 +370,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		inv.StopReason = contract.StopSufficientEvidence
 	}
 	inv.NotInvestigated = mergeUnvisited(inv.NotInvestigated, front)
+	e.progress("reporting")
 	inv.Hypotheses = Synthesize(signals, inv.Evidence, e.opt.MaxFindings)
 	if notices := enrich.Attach(ctx, e.opt.Source, inv.Hypotheses); len(notices) > 0 { for _, n := range notices { inv.Notices = append(inv.Notices, n) } }
 	inv.Spent.Wall = e.opt.Clock().Sub(start)
@@ -729,3 +735,7 @@ func noticeForFailure(capID string, scope contract.Entity, class, detail string)
 
 func panicCode(capID string) string { sum:=sha256.Sum256([]byte(capID)); return fmt.Sprintf("%x",sum[:4]) }
 func truncate(s string,n int)string{r:=[]rune(s);if len(r)<=n{return s};return string(r[:n])+"..."}
+
+func (e *Engine) progress(stage string) {
+	if e.opt.Progress != nil { e.opt.Progress(stage) }
+}
