@@ -17,6 +17,7 @@ import (
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 	"github.com/faizahmd2/vm-native-diagnos/internal/decision"
 	drules "github.com/faizahmd2/vm-native-diagnos/internal/decision/rules"
+	"github.com/faizahmd2/vm-native-diagnos/internal/enrich"
 	"github.com/faizahmd2/vm-native-diagnos/internal/identity"
 	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
 	"github.com/faizahmd2/vm-native-diagnos/internal/source"
