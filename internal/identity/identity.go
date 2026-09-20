@@ -83,12 +83,14 @@ func (r *Resolver) Resolve(ctx context.Context, pid string) (contract.Service, e
 	}
 	if runtime, id := containerID(paths); id != "" {
 		svc.Container = &contract.ContainerRef{Runtime: runtime, ID: id}
-		if info, ok := r.dockerInfo(ctx, id); ok {
+		if r.src.Name() != "replay" && !strings.HasPrefix(r.src.Name(), "replay:") {
+			if info, ok := r.dockerInfo(ctx, id); ok {
 			if len(info.Names) > 0 { svc.Container.Name = strings.TrimPrefix(info.Names[0], "/") }
 			svc.Container.Image = info.Image
 			if info.Labels != nil {
 				svc.Container.PodName = info.Labels["io.kubernetes.pod.name"]
 				svc.Container.Namespace = info.Labels["io.kubernetes.namespace"]
+			}
 			}
 		}
 		if svc.Name == "" {
