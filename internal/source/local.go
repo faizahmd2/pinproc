@@ -91,9 +91,9 @@ func (s *Local) Facts(ctx context.Context) (contract.Facts, error) {
 // Snapshot collects bounded reads.
 func (s *Local) Snapshot(ctx context.Context, reads []Read) (Snapshot, error) {
 	out := Snapshot{At: time.Now(), Reads: map[string][]Raw{}}
-	snapshotTimeout := 2 * s.readTimeout
-	if snapshotTimeout <= 0 || snapshotTimeout > 10*time.Second {
-		snapshotTimeout = 10 * time.Second
+	snapshotTimeout := 10 * time.Second
+	if s.readTimeout > 0 && 3*s.readTimeout > snapshotTimeout {
+		snapshotTimeout = 3 * s.readTimeout
 	}
 	snapshotCtx, cancel := context.WithTimeout(ctx, snapshotTimeout)
 	defer cancel()
