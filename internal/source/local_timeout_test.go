@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"strings"
 	"testing"
 	"time"
 )
@@ -20,15 +21,13 @@ func TestSnapshotBoundsBlockedOpen(t *testing.T) {
 	start := time.Now()
 	snap, err := s.Snapshot(context.Background(), []Read{{Key:"blocked", Path:fifo, Kind:ReadFile}})
 	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatalf("expected blocked read to return a timeout error")
-	}
 	if len(snap.Reads["blocked"]) != 1 {
 		t.Fatalf("expected one bounded result, got %#v", snap.Reads)
+	if snap.Reads["blocked"][0].Err == nil || !strings.Contains(snap.Reads["blocked"][0].Err.Error(), "timed out") {
+		t.Fatalf("expected timed-out raw result, got %#v", snap.Reads["blocked"][0].Err)
 	}
 	if elapsed > 500*time.Millisecond {
 		t.Fatalf("blocked read exceeded timeout bound: %s", elapsed)
-	}
 	_ = os.Remove(fifo)
 }
 
