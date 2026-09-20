@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
@@ -73,7 +75,6 @@ func New(o Options) *Engine {
 
 // Run executes the complete bounded descent.
 func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation, error) {
-	const absoluteMaxWall = 10 * time.Minute
 	ctx, cancel := context.WithTimeout(ctx, absoluteMaxWall)
 	defer cancel()
 	if e.opt.Source == nil || e.opt.Registry == nil || e.opt.Decision == nil {
@@ -128,7 +129,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	if stop := ShouldStop(e.opt.Clock(), start, inv.Spent, e.opt.Budget); stop != "" {
 		inv.StopReason = stop
 		inv.Duration = e.opt.Clock().Sub(start)
-		inv.Hypotheses = Synthesize(rules.EvalAll(e.opt.Rules, inv.Evidence), inv.Evidence)
+		inv.Hypotheses = Synthesize(rules.EvalAll(e.opt.Rules, inv.Evidence), inv.Evidence, e.opt.MaxFindings)
+		_ = enrich.Attach(ctx, e.opt.Source, inv.Hypotheses)
 		return inv, nil
 	}
 
@@ -342,6 +344,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	}
 	inv.NotInvestigated = mergeUnvisited(inv.NotInvestigated, front)
 	inv.Hypotheses = Synthesize(signals, inv.Evidence, e.opt.MaxFindings)
+	if e.opt.Identity != nil { _ = e.opt.Identity.ResolveAll(ctx, inv) }
+	if notices := enrich.Attach(ctx, e.opt.Source, inv.Hypotheses); len(notices) > 0 { for _, n := range notices { inv.Notices = append(inv.Notices, n) } }
 	inv.Spent.Wall = e.opt.Clock().Sub(start)
 	inv.Duration = e.opt.Clock().Sub(start)
 	return inv, nil
@@ -378,15 +382,21 @@ func (e *Engine) sweep(ctx context.Context, inv *contract.Investigation) ([]cont
 }
 
 func registerObserved(inv *contract.Investigation, ev contract.Evidence) {
-	if inv == nil || ev.Entity.ID == "" {
-		return
+	if inv == nil || ev.Entity.ID == "" { return }
+	register := func(entity contract.Entity) {
+		for _, x := range inv.ObservedEntities {
+			if x.Kind == entity.Kind && x.ID == entity.ID && x.ParentID == entity.ParentID { return }
+		}
+		inv.ObservedEntities = append(inv.ObservedEntities, entity)
 	}
-	for _, entity := range inv.ObservedEntities {
-		if entity.Kind == ev.Entity.Kind && entity.ID == ev.Entity.ID && entity.ParentID == ev.Entity.ParentID {
-			return
+	if ev.Capability == "machine.filesystem" {
+		b, _ := json.Marshal(ev.Facts)
+		var f struct{ Mounts []struct{ Path string } }
+		if json.Unmarshal(b, &f) == nil {
+			for _, m := range f.Mounts { if m.Path != "" { register(contract.Entity{Kind:contract.EntityMount, ID:"mount:"+m.Path, Display:m.Path}) } }
 		}
 	}
-	inv.ObservedEntities = append(inv.ObservedEntities, ev.Entity)
+	register(ev.Entity)
 	sort.SliceStable(inv.ObservedEntities, func(i, j int) bool {
 		a, b := inv.ObservedEntities[i], inv.ObservedEntities[j]
 		if a.Kind != b.Kind {
