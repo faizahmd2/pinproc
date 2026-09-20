@@ -98,9 +98,14 @@ func DiscoverPath() string {
 	}
 	candidates = append(candidates, filepath.Join("/etc", "pinproc", "app.yaml"), filepath.Join("/etc", "pinproc", "app.yml"))
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		candidates = append(candidates, filepath.Join(xdg, "diagnos", "config.yml"))
+		candidates = append(candidates, filepath.Join(xdg, "pinproc", "config.yml"), filepath.Join(xdg, "diagnos", "config.yml"))
 	} else if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".config", "diagnos", "config.yml"), filepath.Join(home, ".diagnos", "config.yml"))
+		candidates = append(candidates,
+			filepath.Join(home, ".config", "pinproc", "config.yml"),
+			filepath.Join(home, ".config", "diagnos", "config.yml"),
+			filepath.Join(home, ".pinproc", "config.yml"),
+			filepath.Join(home, ".diagnos", "config.yml"),
+		)
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
@@ -112,9 +117,9 @@ func DiscoverPath() string {
 
 func defaults() Config {
 	var cfg Config
-	cfg.App.Name = "diagnos"
+	cfg.App.Name = "pinproc"
 	cfg.App.LogLevel = "info"
-	cfg.Output.Directory = "~/diagnos/reports"
+	cfg.Output.Directory = "~/pinproc/reports"
 	cfg.Engine.Budget = "normal"
 	cfg.Engine.SampleWindow = time.Second
 	cfg.Engine.ParallelWidth = 3

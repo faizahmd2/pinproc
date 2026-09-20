@@ -29,6 +29,7 @@ type Answer struct {
 	Score         float64
 	Confidence    float64
 	Probabilities map[string]float64
+	Legend        map[string]string
 }
 
 // Provider is the AI decision boundary.

@@ -183,7 +183,8 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := fmt.Sprintf("inv-%d", time.Now().UnixNano())
-	if err := report.StartState(s.report, id, "localhost", req.Trigger); err != nil {
+	host := localHostName()
+	if err := report.StartState(s.report, id, host, req.Trigger); err != nil {
 		s.mu.Unlock()
 		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": "unable to persist inspection state: " + err.Error()})
 		return
@@ -227,7 +228,7 @@ func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget
 	defer func() {
 		if r := recover(); r != nil {
 			reason := fmt.Sprintf("investigation panic: %v", r)
-			_ = report.WriteFailure(s.report, id, "localhost", req.Trigger, req.Hint, b, reason, contract.StopError)
+			_ = report.WriteFailure(s.report, id, localHostName(), req.Trigger, req.Hint, b, reason, contract.StopError)
 			_ = report.FailState(s.report, report.StatusFailed, reason)
 			logger.Error("inspection panic", "id", id, "panic", r)
 		}
@@ -256,7 +257,7 @@ func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget
 		Logger: logger, Progress: progress,
 	})
 	inv, err := eng.Run(ctx, engine.Request{
-		ID: id, Host: "localhost", Trigger: req.Trigger, Hint: req.Hint, Dimension: req.Dimension,
+		ID: id, Host: localHostName(), Trigger: req.Trigger, Hint: req.Hint, Dimension: req.Dimension,
 	})
 	if err != nil {
 		s.failInspection(id, req, b, err)

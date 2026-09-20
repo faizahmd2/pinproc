@@ -21,12 +21,13 @@ decision:
   base_url: https://api.typesafe.ai
   model: jev-latest
   timeout: 10s
+  api_key: "<replace-with-ai-key>"
 
 narrator:
   enabled: true
 
 output:
-  directory: ~/diagnos/reports
+  directory: ~/pinproc/reports
 `
 
 func WriteReference(path string, force bool) error {

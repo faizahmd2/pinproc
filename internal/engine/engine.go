@@ -110,6 +110,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	if e.opt.Identity != nil {
 		if machine, ie := e.opt.Identity.ResolveMachine(ctx); ie == nil {
 			inv.Machine = machine
+			if isLocalHost(req.Host) && machine.Hostname != "" {
+				inv.Host = machine.Hostname
+			}
 		} else {
 			inv.Limitations = append(inv.Limitations, "machine identity unavailable: "+ie.Error())
 		}
@@ -123,6 +126,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	}
 	spent.Wall = e.opt.Clock().Sub(start)
 	inv.Spent = spent
+	inv.MachineSnapshot = buildMachineSnapshot(inv)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			inv.StopReason = contract.StopBudgetTime
@@ -341,11 +345,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 				Err:        err.Error(),
 			})
 		}
-		if a, ok := answers["explains_anomaly"]; ok && a.Noul >= 0.75 && a.Confidence >= 0.5 {
+		if a, ok := answers["explains_anomaly"]; ok && a.Noul >= 0.75 {
 			inv.StopReason = contract.StopSufficientEvidence
 			break
 		}
-		if a, ok := answers["deeper_warranted"]; ok && a.Noul < 0.5 && a.Confidence >= 0.5 {
+		if a, ok := answers["deeper_warranted"]; ok && a.Noul < 0.5 {
 			inv.StopReason = contract.StopSufficientEvidence
 			break
 		}
@@ -738,4 +742,53 @@ func truncate(s string,n int)string{r:=[]rune(s);if len(r)<=n{return s};return s
 
 func (e *Engine) progress(stage string) {
 	if e.opt.Progress != nil { e.opt.Progress(stage) }
+}
+
+func isLocalHost(host string) bool {
+	return host == "" || strings.EqualFold(host, "localhost") || host == "127.0.0.1"
+}
+
+func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot {
+	s := contract.MachineSnapshot{RootDiskPath: "/"}
+	if inv == nil {
+		return s
+	}
+
+	s.CPUs = inv.Machine.CPUs
+	s.MemoryTotalBytes = inv.Machine.MemTotal
+
+	for _, ev := range inv.Evidence {
+		for _, obs := range ev.Observations {
+			switch obs.Key {
+			case "cpu.utilization":
+				s.CPUUtilizationPct = obs.Value
+			case "load.one_per_core":
+				if s.CPUs > 0 {
+					s.Load1 = obs.Value * float64(s.CPUs)
+				}
+			case "mem.available_pct":
+				if s.MemoryTotalBytes > 0 {
+					s.MemoryAvailableBytes = uint64(float64(s.MemoryTotalBytes) * obs.Value / 100)
+					s.MemoryUsedBytes = s.MemoryTotalBytes - s.MemoryAvailableBytes
+				}
+				s.MemoryUsedPct = 100 - obs.Value
+			case "mem.swap_used_pct":
+				s.SwapUsedPct = obs.Value
+			}
+		}
+	}
+
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs("/", &fs); err == nil {
+		bsize := uint64(fs.Bsize)
+		s.RootDiskTotalBytes = fs.Blocks * bsize
+		s.RootDiskFreeBytes = fs.Bavail * bsize
+		if s.RootDiskTotalBytes >= s.RootDiskFreeBytes {
+			s.RootDiskUsedBytes = s.RootDiskTotalBytes - s.RootDiskFreeBytes
+			if s.RootDiskTotalBytes > 0 {
+				s.RootDiskUsedPct = float64(s.RootDiskUsedBytes) / float64(s.RootDiskTotalBytes) * 100
+			}
+		}
+	}
+	return s
 }
