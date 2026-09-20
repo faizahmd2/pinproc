@@ -6,9 +6,9 @@ import (
 )
 
 func TestRenderServiceUnit(t *testing.T) {
-	unit := renderServiceUnit("/usr/local/bin/vm-native-pinproc", "pinproc", "pinproc", "/var/lib/vm-native-pinproc")
+	unit := renderServiceUnit("/usr/local/bin/pinproc", "pinproc", "pinproc", "/var/lib/pinproc")
 	for _, want := range []string{
-		"ExecStart=/usr/local/bin/vm-native-pinproc service run --config /etc/vm-native-pinproc/app.yaml",
+		"ExecStart=/usr/local/bin/pinproc service run --config /etc/pinproc/app.yaml",
 		"User=pinproc",
 		"Group=pinproc",
 		"Restart=on-failure",
