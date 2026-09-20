@@ -22,4 +22,9 @@ func makeDecisionProvider(cfg *config.Config, noAI bool) (decision.Provider, err
 		return nil, fmt.Errorf("decision provider %q is not available in this milestone", cfg.Decision.Provider)
 	}
 }
-\nfunc decisionNotice(cfg *config.Config, noAI bool) string {\n\tif noAI || cfg == nil || cfg.Decision.Provider != "jev" { return "" }\n\tif cfg.Decision.APIKey == "" { return "AI decision provider unavailable — TYPESAFE_API_KEY is not set. Using deterministic rules." }\n\treturn ""\n}\n
+
+func decisionNotice(cfg *config.Config, noAI bool) string {
+	if noAI || cfg == nil || cfg.Decision.Provider != "jev" { return "" }
+	if cfg.Decision.APIKey == "" { return "AI decision provider unavailable — TYPESAFE_API_KEY is not set. Using deterministic rules." }
+	return ""
+}
