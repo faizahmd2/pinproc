@@ -31,17 +31,17 @@ fmt-check:
 install: build
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 0755 diagnos "$(DESTDIR)$(BINDIR)/diagnos"
-	install -d "$(DESTDIR)/etc/vm-native-diagnos"
-	install -m 0644 app.yaml "$(DESTDIR)/etc/vm-native-diagnos/app.yaml"
+	install -d "$(DESTDIR)/etc/pinproc"
+	install -m 0644 app.yaml "$(DESTDIR)/etc/pinproc/app.yaml"
 
 release:
 	rm -rf dist
 	mkdir -p dist
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/vm-native-diagnos_linux_amd64 ./cmd/diagnos
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/vm-native-diagnos_linux_arm64 ./cmd/diagnos
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_amd64 ./cmd/diagnos
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_arm64 ./cmd/diagnos
 	cp app.yaml dist/app.yaml
-	chmod 0755 dist/vm-native-diagnos_linux_*
-	cd dist && sha256sum vm-native-diagnos_linux_* app.yaml > checksums.txt
+	chmod 0755 dist/pinproc_linux_*
+	cd dist && sha256sum pinproc_linux_* app.yaml > checksums.txt
 
 clean:
 	rm -rf dist
