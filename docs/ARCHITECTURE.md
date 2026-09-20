@@ -1,6 +1,6 @@
 # pinproc V2 Architecture
 
-Diagnos V2 is a bounded, realtime Linux investigation engine. It is host-native: the investigated machine's /proc, /sys, cgroups and other read-only kernel interfaces are the source of truth. There is no Prometheus, node_exporter, TSDB, SSH transport, or eBPF dependency in the default product.
+pinproc V2 is a bounded, realtime Linux investigation engine. It is host-native: the investigated machine's /proc, /sys, cgroups and other read-only kernel interfaces are the source of truth. There is no Prometheus, node_exporter, TSDB, SSH transport, or eBPF dependency in the default product.
 
 Collection uses direct local /proc and /sys reads. Short sampling windows are used only when a kernel counter delta is required for a realtime rate, not for historical telemetry or range queries. The engine never converts model output into an arbitrary path or shell command.
 

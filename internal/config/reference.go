@@ -21,12 +21,10 @@ decision:
   base_url: https://api.typesafe.ai
   model: jev-latest
   timeout: 10s
+  api_key: "<replace-with-ai-key>"
 
 narrator:
   enabled: true
-
-decision:
-  api_key: "<replace-with-ai-key>"
 
 output:
   directory: ~/pinproc/reports

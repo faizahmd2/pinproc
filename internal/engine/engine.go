@@ -778,9 +778,8 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 		}
 	}
 
-	if _, err := syscall.Statfs("/", new(syscall.Statfs_t)); err == nil {
-		var fs syscall.Statfs_t
-		if err := syscall.Statfs("/", &fs); err == nil {
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs("/", &fs); err == nil {
 			bsize := uint64(fs.Bsize)
 			s.RootDiskTotalBytes = fs.Blocks * bsize
 			s.RootDiskFreeBytes = fs.Bavail * bsize
