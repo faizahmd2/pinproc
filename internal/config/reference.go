@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-const ReferenceYAML = `# vm-native-diagnos configuration
+const ReferenceYAML = `# pinproc configuration
 # The agent is local-only and reads the machine's OS directly.
 
 server:
