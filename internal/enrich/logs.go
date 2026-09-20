@@ -14,8 +14,8 @@ import (
 	"github.com/joshdurbin/drain3"
 )
 
-var severityRe = regexp.MustCompile(?i)(ERROR|FATAL|PANIC|Exception|Traceback)
-var oomRe = regexp.MustCompile(`Killed process ([0-9]+) \\(([^)]*)\\)`)
+var severityRe = regexp.MustCompile("(?i)\\b(ERROR|FATAL|PANIC|Exception|Traceback)\\b")
+var oomRe = regexp.MustCompile("Killed process ([0-9]+) \\(([^)]*)\\)")
 
 type linePick struct {
 	line string
