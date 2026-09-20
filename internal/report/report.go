@@ -130,13 +130,24 @@ func renderChain(b *strings.Builder,inv *contract.Investigation,top contract.Ent
 	}
 	b.WriteString("\n")
 }
-func verifyForTopFinding(inv *contract.Investigation,top contract.Entity)[]string{
+func verifyForTopFinding(inv *contract.Investigation, top contract.Entity) []string {
+	allowed:=map[string]bool{top.ID:true}
+	current:=top
+	for current.ParentID!="" {
+		found:=false
+		for _,e:=range inv.ObservedEntities {
+			if e.ID==current.ParentID { allowed[e.ID]=true; current=e; found=true; break }
+		}
+		if !found { break }
+	}
 	seen:=map[string]bool{};var out []string
-	for _,e:=range inv.Evidence{if e.Entity.ID==top.ID||e.Entity.ID==top.ParentID{for _,v:=range e.Verify{if v!=""&&!seen[v]{seen[v]=true;out=append(out,v)}}}}
+	for _,e:=range inv.Evidence {
+		if !allowed[e.Entity.ID] { continue }
+		for _,v:=range e.Verify { if v!=""&&!seen[v]{seen[v]=true;out=append(out,v)} }
+	}
 	sort.Strings(out);return out
 }
 func sameEntity(a,b contract.Entity)bool{return a.Kind==b.Kind&&a.ID==b.ID&&a.ParentID==b.ParentID}
 func unique(in []string)[]string{m:=map[string]bool{};out:=[]string{};for _,x:=range in{if x!=""&&!m[x]{m[x]=true;out=append(out,x)}};return out}
 func budgetName(inv *contract.Investigation)string{if inv.Budget.MaxDepth<=2{return "fast"};if inv.Budget.MaxDepth>=5{return "deep"};return "normal"}
 func formatDuration(d time.Duration)string{if d<=0{return "0.0s"};return fmt.Sprintf("%.1fs",d.Seconds())}
-_ = sameEntity
