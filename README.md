@@ -145,6 +145,15 @@ The installer creates the Linux system account if it is missing and assigns it a
 
 This is the recommended deployment shape when you want the inspection isolated from the normal login account.
 
+### Manually create the dedicated account (optional)
+
+The installer can create this account automatically. When you prefer to create it yourself, run:
+
+    sudo groupadd --system diagnos
+    sudo useradd --system --gid diagnos --home-dir /var/lib/vm-native-diagnos --no-create-home --shell /usr/sbin/nologin diagnos
+
+Then keep service.user and service.group set to diagnos and run the service install command. Existing accounts are reused; the installer does not delete them.
+
 ## Trigger an inspection
 
 There is one production inspection entry point:
