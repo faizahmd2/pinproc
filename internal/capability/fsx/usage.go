@@ -1,6 +1,7 @@
 package fsx
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -151,6 +152,10 @@ func parseUsage(in spec.ParseInput) (contract.Evidence, error) {
 	if len(dirs) > 10 { dirs = dirs[:10] }
 
 	f := UsageFacts{Mount: mount}
+	if deleted := deletedOpenOnMount(in, mount); deleted > 0 {
+		f.DeletedOpenBytes = deleted
+		f.TopDirectories = append(f.TopDirectories, fmt.Sprintf("deleted-but-open files: %d bytes held under %s", deleted, mount))
+	}
 	for _, d := range dirs { f.TopDirectories = append(f.TopDirectories, fmt.Sprintf("%s (%d bytes)", d.Path, d.Size)) }
 	for _, x := range files { f.TopFiles = append(f.TopFiles, fmt.Sprintf("%s (%d bytes)", x.Path, x.Size)) }
 	return contract.Evidence{
@@ -177,4 +182,25 @@ func raw(s source.Snapshot, k string) []byte {
 	r := s.Reads[k]
 	if len(r) == 0 { return nil }
 	return r[0].Data
+}
+
+func deletedOpenOnMount(in spec.ParseInput, mount string) uint64 {
+	var total uint64
+	for _, e := range in.Prior {
+		if e.Capability != "process.files" { continue }
+		var f struct { Samples []struct { Target string `json:"Target"` } `json:"Samples"` }
+		b, _ := json.Marshal(e.Facts)
+		if json.Unmarshal(b, &f) != nil { continue }
+		for _, s := range f.Samples {
+			if !strings.HasSuffix(s.Target, " (deleted)") { continue }
+			p := strings.TrimSuffix(s.Target, " (deleted)")
+			if p == mount || strings.HasPrefix(p, mount+string(filepath.Separator)) {
+				for _, o := range e.Observations {
+					if o.Key == "proc.fd_deleted_bytes" { total += uint64(o.Value); break }
+				}
+				break
+			}
+		}
+	}
+	return total
 }
