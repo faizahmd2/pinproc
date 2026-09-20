@@ -32,6 +32,12 @@ type NarratorConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+type ServiceConfig struct {
+	User string `yaml:"user"`
+	Group string `yaml:"group"`
+	DataDirectory string `yaml:"data_directory"`
+}
+
 type Config struct {
 	App struct {
 		Name     string `yaml:"name"`
@@ -41,6 +47,7 @@ type Config struct {
 	Engine   EngineConfig   `yaml:"engine"`
 	Decision DecisionConfig `yaml:"decision"`
 	Narrator NarratorConfig `yaml:"narrator"`
+	Service  ServiceConfig  `yaml:"service"`
 	Source   SourceConfig   `yaml:"source"`
 	Report   struct { MaxFindings int `yaml:"max_findings"` } `yaml:"report"`
 
@@ -116,6 +123,7 @@ func defaults() Config {
 	cfg.Decision.Model = "jev-latest"
 	cfg.Decision.Timeout = 10 * time.Second
 	cfg.Narrator.Enabled = true
+	cfg.Service.DataDirectory = "/var/lib/vm-native-diagnos"
 	cfg.Source.ReadTimeout = 2 * time.Second
 	cfg.Report.MaxFindings = 5
 	cfg.Server.Listen = "127.0.0.1:8080"
