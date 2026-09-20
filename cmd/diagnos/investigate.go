@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
 	"github.com/faizahmd2/vm-native-diagnos/internal/config"
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
@@ -57,9 +58,11 @@ func newInvestigateCmd() *cobra.Command {
 			return err
 		}
 		eng := engine.New(engine.Options{Source: src, Registry: reg, Rules: rules.Default(), Decision: dec, Identity: identity.New(src), Budget: b, Logger: logger, ParallelWidth: loadedCfg.Engine.ParallelWidth, MaxFindings: loadedCfg.Report.MaxFindings, DecisionNotice: decisionNotice(loadedCfg, noAI)})
-		inv, err := eng.Run(context.Background(), engine.Request{Host: host, Trigger: trigger, Hint: hint, Dimension: contract.Dimension(dim)})
+		invID := fmt.Sprintf("inv-%d", time.Now().UnixNano())
+		inv, err := eng.Run(context.Background(), engine.Request{ID: invID, Host: host, Trigger: trigger, Hint: hint, Dimension: contract.Dimension(dim)})
 		if err != nil {
-			return err
+			_ = report.WriteFailure(out, invID, host, trigger, hint, b, err.Error(), contract.StopError)
+			return fmt.Errorf("investigation failed completely: %w (failure report: %s)", err, filepath.Join(out, invID, "report.md"))
 		}
 		if loadedCfg.Narrator.Enabled {
 			if text, ne := narrator.NewRules().Narrate(context.Background(), inv); ne == nil {
