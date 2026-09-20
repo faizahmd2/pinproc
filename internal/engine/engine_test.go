@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
-	drules "github.com/faizahmd2/vm-native-diagnos/internal/decision/rules"
-	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
-	"github.com/faizahmd2/vm-native-diagnos/internal/source"
+	"github.com/faizahmd2/pinproc/internal/capability"
+	"github.com/faizahmd2/pinproc/internal/contract"
+	drules "github.com/faizahmd2/pinproc/internal/decision/rules"
+	"github.com/faizahmd2/pinproc/internal/rules"
+	"github.com/faizahmd2/pinproc/internal/source"
 )
 
 type sampleSource struct{ s source.Sample }
