@@ -9,7 +9,7 @@ import (
 func TestLoadAppYAMLPlaceholderDoesNotBecomeAIKey(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "app.yaml")
-	data := []byte("decision:\n  provider: jev\n  api_key: "<replace-with-ai-key>"\n")
+	data := []byte("decision:\n  provider: jev\n  api_key: \"<replace-with-ai-key>\"\n")
 	if err := os.WriteFile(p, data, 0600); err != nil { t.Fatal(err) }
 	cfg, err := Load(p)
 	if err != nil { t.Fatal(err) }
