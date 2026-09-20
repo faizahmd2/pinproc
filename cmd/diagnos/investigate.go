@@ -37,8 +37,15 @@ func newInvestigateCmd() *cobra.Command {
 		if err := report.EnsureWritable(out); err != nil {
 			return fmt.Errorf("output directory unavailable: %w", err)
 		}
-		src, closeFn, err := targetSource(context.Background(), host, loadedCfg.Source.ReadTimeout)
+		b, err := budget(budgetName)
 		if err != nil {
+			return err
+		}
+		if budgetName == "normal" {
+			b, _ = budget(loadedCfg.Engine.Budget)
+		}		src, closeFn, err := targetSource(context.Background(), host, loadedCfg.Source.ReadTimeout)
+		if err != nil {
+			_ = report.WriteFailure(out, fmt.Sprintf("inv-%d", time.Now().UnixNano()), host, trigger, hint, b, err.Error(), contract.StopError)
 			return err
 		}
 		defer closeFn()
