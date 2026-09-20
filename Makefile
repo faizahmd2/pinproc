@@ -31,13 +31,14 @@ fmt-check:
 install: build
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 0755 diagnos "$(DESTDIR)$(BINDIR)/diagnos"
+	install -d "$(DESTDIR)/etc/vm-native-diagnos"
+	install -m 0644 app.yaml "$(DESTDIR)/etc/vm-native-diagnos/app.yaml"
 
 release:
 	rm -rf dist
 	mkdir -p dist
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_linux_amd64 ./cmd/diagnos
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_linux_arm64 ./cmd/diagnos
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_darwin_arm64 ./cmd/diagnos
 	cp app.yaml dist/app.yaml
 	chmod 0755 dist/diagnos_*
 	cd dist && sha256sum diagnos_* app.yaml > checksums.txt
