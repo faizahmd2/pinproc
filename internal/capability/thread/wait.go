@@ -19,7 +19,7 @@ type WaitFacts struct {
 
 // Wait returns a read-only scheduler wait-point snapshot.
 func Wait() spec.Capability {
-	return spec.Capability{ID: "thread.wait", Dimension: contract.DimensionScheduling, Level: contract.L4Mechanism, Kind: contract.KindSnapshot, Accepts: contract.EntityProcess, Cost: contract.CostHigh, Summary: "thread state and kernel wait-point inventory",
+	return spec.Capability{ID: "thread.wait", Dimension: contract.DimensionScheduling, Level: contract.L4Mechanism, Kind: contract.KindSnapshot, Accepts: contract.EntityProcess, Cost: contract.CostHigh, Requires: []string{"root_or_ptrace"}, Summary: "thread state and kernel wait-point inventory",
 		Reads: func(e contract.Entity, _ contract.Facts) []source.Read {
 			p := strings.TrimPrefix(e.ID, "pid:")
 			return []source.Read{{Key: "thread.wchan", Path: "/proc/" + p + "/task/*/wchan", Kind: source.ReadGlob, Optional: true}, {Key: "thread.stat", Path: "/proc/" + p + "/task/*/stat", Kind: source.ReadGlob, Optional: true}}
