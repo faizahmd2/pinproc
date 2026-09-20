@@ -15,7 +15,7 @@ import (
 func BuildBuiltin() (*Registry, error) {
 	r := NewRegistry()
 	caps := []Capability{
-		machine.CPU(), machine.Memory(), machine.IO(), machine.Network(), machine.Limits(), machine.Processes(),
+		machine.CPU(), machine.Memory(), machine.IO(), machine.Network(), machine.Limits(), machine.Processes(), fsx.Filesystem(), fsx.Usage(),
 		process.CPU(), process.Memory(), process.IO(), process.Files(), process.Sockets(), process.MemoryMaps(), process.Limits(), process.Tree(),
 		thread.CPU(), thread.Scheduler(), thread.Wait(),
 		cgroup.CPU(), cgroup.Memory(), cgroup.IO(),
@@ -31,6 +31,7 @@ func BuildBuiltin() (*Registry, error) {
 		"machine.io":        {"machine.processes"},
 		"machine.network":   {"machine.processes"},
 		"machine.limits":    {"machine.processes"},
+		"machine.filesystem": {"fs.usage"},
 		"machine.processes": {"process.cpu", "process.memory", "process.io"},
 		"process.cpu":       {"thread.cpu", "thread.scheduler", "thread.wait", "cgroup.cpu"},
 		"process.memory":    {"process.memory_maps", "cgroup.memory"},
