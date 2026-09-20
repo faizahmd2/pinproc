@@ -27,7 +27,7 @@ func newInvestigateCmd() *cobra.Command {
 		}
 		loadedCfg, err := config.Load(cfgPath)
 		if err != nil { return err }
-		src, closeFn, err := targetSource(context.Background(), host)
+		src, closeFn, err := targetSource(context.Background(), host, loadedCfg.Source.ReadTimeout)
 		if err != nil {
 			return err
 		}
