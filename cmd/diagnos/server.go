@@ -14,15 +14,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
-	"github.com/faizahmd2/vm-native-diagnos/internal/config"
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
-	"github.com/faizahmd2/vm-native-diagnos/internal/engine"
-	"github.com/faizahmd2/vm-native-diagnos/internal/identity"
-	"github.com/faizahmd2/vm-native-diagnos/internal/narrator"
-	"github.com/faizahmd2/vm-native-diagnos/internal/report"
-	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
-	"github.com/faizahmd2/vm-native-diagnos/internal/source"
+	"github.com/faizahmd2/pinproc/internal/capability"
+	"github.com/faizahmd2/pinproc/internal/config"
+	"github.com/faizahmd2/pinproc/internal/contract"
+	"github.com/faizahmd2/pinproc/internal/engine"
+	"github.com/faizahmd2/pinproc/internal/identity"
+	"github.com/faizahmd2/pinproc/internal/narrator"
+	"github.com/faizahmd2/pinproc/internal/report"
+	"github.com/faizahmd2/pinproc/internal/rules"
+	"github.com/faizahmd2/pinproc/internal/source"
 	"github.com/spf13/cobra"
 )
 
@@ -88,7 +88,7 @@ func newServeCmd() *cobra.Command {
 				WriteTimeout:      10 * time.Minute,
 				IdleTimeout:       60 * time.Second,
 			}
-			logger.Info("vm-native-diagnos service started", "addr", listen, "report_dir", dir)
+			logger.Info("pinproc service started", "addr", listen, "report_dir", dir)
 			return srv.ListenAndServe()
 		},
 	}
@@ -118,7 +118,7 @@ func (s *nativeServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeHTTPJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "vm-native-diagnos"})
+	writeHTTPJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "pinproc"})
 }
 
 func (s *nativeServer) handleStatus(w http.ResponseWriter, r *http.Request) {
