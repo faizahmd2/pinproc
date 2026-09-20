@@ -10,20 +10,20 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/config"
+	"github.com/faizahmd2/pinproc/internal/config"
 	"github.com/spf13/cobra"
 )
 
-const serviceUnitPath = "/etc/systemd/system/vm-native-diagnos.service"
-const serviceConfigPath = "/etc/vm-native-diagnos/app.yaml"
-const serviceBinaryPath = "/usr/local/bin/vm-native-diagnos"
+const serviceUnitPath = "/etc/systemd/system/pinproc.service"
+const serviceConfigPath = "/etc/pinproc/app.yaml"
+const serviceBinaryPath = "/usr/local/bin/pinproc"
 
 func newServiceCmd() *cobra.Command {
 	run := newServeCmd()
 	run.Use = "run"
 	run.Short = "run the persistent inspection service"
 
-	cmd := &cobra.Command{Use:"service", Short:"manage the persistent vm-native-diagnos service"}
+	cmd := &cobra.Command{Use:"service", Short:"manage the persistent pinproc service"}
 	cmd.AddCommand(run, newServiceInstallCmd(), newServiceUninstallCmd())
 	return cmd
 }
@@ -37,7 +37,7 @@ func newServiceInstallCmd() *cobra.Command {
 			if _, err := exec.LookPath("systemctl"); err != nil { return fmt.Errorf("systemctl not found; this installer requires systemd") }
 			cfgFile := cfgPath
 			if cfgFile == "" { cfgFile = config.DiscoverPath() }
-			if cfgFile == "" { return fmt.Errorf("app.yaml not found; place app.yaml in the current directory or /etc/vm-native-diagnos/app.yaml first") }
+			if cfgFile == "" { return fmt.Errorf("app.yaml not found; place app.yaml in the current directory or /etc/pinproc/app.yaml first") }
 			cfg, err := config.Load(cfgFile); if err != nil { return fmt.Errorf("load config: %w", err) }
 
 			serviceUser, serviceGroup, err := resolveServiceAccount(cfg.Service.User, cfg.Service.Group)
@@ -46,7 +46,7 @@ func newServiceInstallCmd() *cobra.Command {
 			if err != nil { return err }
 
 			dataDir := strings.TrimSpace(cfg.Service.DataDirectory)
-			if dataDir == "" { dataDir = "/var/lib/vm-native-diagnos" }
+			if dataDir == "" { dataDir = "/var/lib/pinproc" }
 			if err := os.MkdirAll(dataDir, 0750); err != nil { return fmt.Errorf("create data directory: %w", err) }
 			if err := os.Chown(dataDir, uid, gid); err != nil { return fmt.Errorf("own data directory: %w", err) }
 
@@ -61,10 +61,10 @@ func newServiceInstallCmd() *cobra.Command {
 			if err := installServiceBinary(exe); err != nil { return err }
 			if err := os.WriteFile(serviceUnitPath, []byte(renderServiceUnit(serviceBinaryPath, serviceUser, serviceGroup, dataDir)), 0644); err != nil { return fmt.Errorf("write systemd unit: %w", err) }
 			if err := runSystemctl("daemon-reload"); err != nil { return err }
-			if err := runSystemctl("enable", "vm-native-diagnos.service"); err != nil { return err }
-			if err := runSystemctl("restart", "vm-native-diagnos.service"); err != nil { return err }
-			fmt.Fprintf(cmd.OutOrStdout(), "vm-native-diagnos service installed and started as %s:%s\n", serviceUser, serviceGroup)
-			fmt.Fprintln(cmd.OutOrStdout(), "logs: sudo journalctl -u vm-native-diagnos -f")
+			if err := runSystemctl("enable", "pinproc.service"); err != nil { return err }
+			if err := runSystemctl("restart", "pinproc.service"); err != nil { return err }
+			fmt.Fprintf(cmd.OutOrStdout(), "pinproc service installed and started as %s:%s\n", serviceUser, serviceGroup)
+			fmt.Fprintln(cmd.OutOrStdout(), "logs: sudo journalctl -u pinproc -f")
 			return nil
 		},
 	}
@@ -76,10 +76,10 @@ func newServiceUninstallCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if runtime.GOOS != "linux" { return fmt.Errorf("service uninstall is supported on Linux only") }
 			if os.Geteuid() != 0 { return fmt.Errorf("run as root: sudo %s service uninstall", os.Args[0]) }
-			_ = runSystemctl("disable", "--now", "vm-native-diagnos.service")
+			_ = runSystemctl("disable", "--now", "pinproc.service")
 			if err := os.Remove(serviceUnitPath); err != nil && !os.IsNotExist(err) { return err }
 			_ = runSystemctl("daemon-reload")
-			fmt.Fprintln(cmd.OutOrStdout(), "vm-native-diagnos service removed; config and reports were preserved")
+			fmt.Fprintln(cmd.OutOrStdout(), "pinproc service removed; config and reports were preserved")
 			return nil
 		},
 	}
@@ -114,7 +114,7 @@ func ensureServiceUser(name, group string) error {
 			if err := exec.Command("groupadd","--system",group).Run(); err != nil { return fmt.Errorf("create service group %q: %w",group,err) }
 		}
 	}
-	args := []string{"--system","--home-dir","/var/lib/vm-native-diagnos","--no-create-home","--shell","/usr/sbin/nologin"}
+	args := []string{"--system","--home-dir","/var/lib/pinproc","--no-create-home","--shell","/usr/sbin/nologin"}
 	if group != "" { args = append(args,"--gid",group) }
 	args = append(args,name)
 	if err := exec.Command("useradd",args...).Run(); err != nil { return fmt.Errorf("create service user %q: %w",name,err) }
@@ -131,7 +131,7 @@ func lookupIDs(serviceUser, serviceGroup string) (int,int,error) {
 
 func resolveServiceOutput(path, serviceUser string) (string,error) {
 	path = strings.TrimSpace(path)
-	if path == "" { return "/var/lib/vm-native-diagnos/reports",nil }
+	if path == "" { return "/var/lib/pinproc/reports",nil }
 	if path == "~" || strings.HasPrefix(path,"~/") {
 		u, err := user.Lookup(serviceUser); if err != nil { return "",err }
 		return filepath.Join(u.HomeDir,strings.TrimPrefix(path,"~/")),nil
@@ -159,7 +159,7 @@ func installServiceBinary(source string) error {
 
 	data, err := os.ReadFile(source)
 	if err != nil { return fmt.Errorf("read service executable %q: %w", source, err) }
-	tmp, err := os.CreateTemp(filepath.Dir(serviceBinaryPath), ".vm-native-diagnos-*")
+	tmp, err := os.CreateTemp(filepath.Dir(serviceBinaryPath), ".pinproc-*")
 	if err != nil { return fmt.Errorf("stage service executable: %w", err) }
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
@@ -172,7 +172,7 @@ func installServiceBinary(source string) error {
 	return nil
 }
 func renderServiceUnit(exe, serviceUser, serviceGroup, dataDir string) string {
-	return fmt.Sprintf("[Unit]\nDescription=vm-native-diagnos Linux inspection service\nAfter=local-fs.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart=%s service run --config %s\nWorkingDirectory=%s\nUser=%s\nGroup=%s\nRestart=on-failure\nRestartSec=2s\nTimeoutStopSec=30s\nKillSignal=SIGTERM\nEnvironment=HOME=%s\n\nCapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\nAmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\n\nProtectSystem=strict\nProtectHome=true\nProtectKernelModules=true\nProtectKernelTunables=true\nProtectControlGroups=true\nPrivateTmp=true\nReadWritePaths=%s\nRestrictNamespaces=true\nRestrictRealtime=true\nLockPersonality=true\n\n[Install]\nWantedBy=multi-user.target\n", exe, serviceConfigPath, dataDir, serviceUser, serviceGroup, dataDir, dataDir)
+	return fmt.Sprintf("[Unit]\nDescription=pinproc Linux inspection service\nAfter=local-fs.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart=%s service run --config %s\nWorkingDirectory=%s\nUser=%s\nGroup=%s\nRestart=on-failure\nRestartSec=2s\nTimeoutStopSec=30s\nKillSignal=SIGTERM\nEnvironment=HOME=%s\n\nCapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\nAmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\n\nProtectSystem=strict\nProtectHome=true\nProtectKernelModules=true\nProtectKernelTunables=true\nProtectControlGroups=true\nPrivateTmp=true\nReadWritePaths=%s\nRestrictNamespaces=true\nRestrictRealtime=true\nLockPersonality=true\n\n[Install]\nWantedBy=multi-user.target\n", exe, serviceConfigPath, dataDir, serviceUser, serviceGroup, dataDir, dataDir)
 }
 
 func runSystemctl(args ...string) error {
