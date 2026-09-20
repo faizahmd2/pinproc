@@ -56,7 +56,7 @@ The investigation runs locally and the latest report is persisted. The response 
 GET /report
 ```
 
-Returns the latest stable JSON investigation contract.
+Returns the latest completed investigation. While an investigation is running, `/report` returns `202 Accepted` with its current ID and status. If an investigation fails completely, the failure report is still persisted with the reason.
 
 Default listen address:
 
@@ -85,11 +85,15 @@ decision:
   timeout: 10s
 ```
 
-Set:
+Put the AI key in the tracked `app.yaml`:
 
-```sh
-export TYPESAFE_API_KEY=...
+```yaml
+decision:
+  provider: jev
+  api_key: "<replace-with-ai-key>"
 ```
+
+The default config discovery checks the current directory first, so running `./diagnos ...` from the project or release directory automatically uses `app.yaml`. An unchanged placeholder is treated as AI not configured and the deterministic rules are used with a visible report notice. Environment variables remain optional overrides; they are not required for normal setup.
 
 If the AI service is unavailable, the investigation falls back to deterministic rule decisions rather than failing the machine analysis.
 
@@ -109,7 +113,7 @@ The JSON document is the stable machine-readable contract. The Markdown document
 
 ```sh
 make build
-sudo install -m 0755 diagnos /usr/local/bin/vm-native-diagnos
+sudo make install
 ```
 
 Run explicitly:

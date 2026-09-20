@@ -25,6 +25,6 @@ func makeDecisionProvider(cfg *config.Config, noAI bool) (decision.Provider, err
 
 func decisionNotice(cfg *config.Config, noAI bool) string {
 	if noAI || cfg == nil || cfg.Decision.Provider != "jev" { return "" }
-	if cfg.Decision.APIKey == "" { return "AI decision provider unavailable — TYPESAFE_API_KEY is not set. Using deterministic rules." }
+	if cfg.Decision.APIKey == "" { return "AI decision provider unavailable — decision.api_key is not configured in app.yaml. Using deterministic rules." }
 	return ""
 }

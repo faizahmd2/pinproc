@@ -16,12 +16,19 @@ engine:
 
 decision:
   provider: jev
+  api_key: "<replace-with-ai-key>"
   base_url: https://api.typesafe.ai
   model: jev-latest
   timeout: 10s
 
 narrator:
   enabled: true
+
+source:
+  read_timeout: 2s
+
+report:
+  max_findings: 5
 
 output:
   directory: ~/diagnos/reports

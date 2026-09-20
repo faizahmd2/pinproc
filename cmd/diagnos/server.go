@@ -71,6 +71,8 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	if req.Trigger==""{req.Trigger="http"}
 	if !s.mu.TryLock(){http.Error(w,"investigation already running",http.StatusConflict);return}
 	id:=fmt.Sprintf("inv-%d",time.Now().UnixNano())
+	if err := report.WriteRunning(s.report,id,"localhost",req.Trigger); err != nil { s.mu.Unlock(); http.Error(w,"unable to persist running state: "+err.Error(),http.StatusInternalServerError); return }
+	logger.Info("investigation accepted","id",id,"trigger",req.Trigger,"budget",req.Budget)
 	w.Header().Set("Content-Type","application/json");w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{"id":id,"status":"running","report":"/report"})
 	go s.runAsync(id,req,b)
@@ -78,6 +80,23 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 
 func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget) {
 	defer s.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	logger.Info("investigation running", "id", id)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				logger.Info("investigation still running", "id", id)
+			case <-done:
+				return
+			}
+		}
+	}()
 	defer func(){if r:=recover();r!=nil{
 		inv:=&contract.Investigation{SchemaVersion:contract.SchemaVersion,ID:id,Host:"localhost",Trigger:req.Trigger,Hint:req.Hint,StartedAt:time.Now(),Budget:b,StopReason:contract.StopError}
 		inv.Limitations=append(inv.Limitations,fmt.Sprintf("investigation panic: %v",r))
@@ -88,8 +107,8 @@ func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget
 	reg,err:=capability.BuildBuiltin();if err!=nil{_ = s.writeEngineError(id,req,b,err);return}
 	dec,err:=makeDecisionProvider(s.cfg,req.NoAI);if err!=nil{_ = s.writeEngineError(id,req,b,err);return}
 	eng:=engine.New(engine.Options{Source:src,Registry:reg,Rules:rules.Default(),Decision:dec,Identity:identity.New(src),Budget:b,ParallelWidth:s.cfg.Engine.ParallelWidth,MaxFindings:s.cfg.Report.MaxFindings,DecisionNotice:decisionNotice(s.cfg,req.NoAI),Logger:logger})
-	inv,err:=eng.Run(context.Background(),engine.Request{ID:id,Host:"localhost",Trigger:req.Trigger,Hint:req.Hint,Dimension:req.Dimension})
-	if err!=nil{_ = s.writeEngineError(id,req,b,err);return}
+	inv,err:=eng.Run(ctx,engine.Request{ID:id,Host:"localhost",Trigger:req.Trigger,Hint:req.Hint,Dimension:req.Dimension})
+	if err!=nil{_ = s.writeEngineError(id,req,b,err); logger.Error("investigation failed","id",id,"error",err); return}
 	if s.cfg.Narrator.Enabled{if text,ne:=narrator.NewRules().Narrate(context.Background(),inv);ne==nil&&narrator.Validate(inv,text)==nil{inv.Narrative=text}}
 	if err:=report.Write(inv,s.report);err!=nil{logger.Error("write report failed","id",id,"error",err)}
 }
@@ -123,7 +142,7 @@ func isLoopback(r *http.Request)bool{
 func (s *nativeServer) handleReport(w http.ResponseWriter,r *http.Request){
 	if !authorized(r,s.cfg.Server.APIKey){http.Error(w,"unauthorized",http.StatusUnauthorized);return}
 	if r.Method!=http.MethodGet{http.Error(w,"method not allowed",http.StatusMethodNotAllowed);return}
-	dir,err:=report.LatestDir(s.report);if err!=nil{if os.IsNotExist(err){http.Error(w,"no report available; GET /trigger first",http.StatusNotFound);return};http.Error(w,err.Error(),http.StatusInternalServerError);return}
+	dir,err:=report.LatestDir(s.report);if err!=nil{if os.IsNotExist(err){if running,re:=report.ReadRunning(s.report);re==nil{w.Header().Set("Content-Type","application/json");w.WriteHeader(http.StatusAccepted);_ = json.NewEncoder(w).Encode(map[string]any{"id":running.ID,"status":"running"});return};http.Error(w,"no report available; GET /trigger first",http.StatusNotFound);return};http.Error(w,err.Error(),http.StatusInternalServerError);return}
 	format:=strings.ToLower(r.URL.Query().Get("format"))
 	if format=="json"{data,err:=os.ReadFile(filepath.Join(dir,"investigation.json"));if err!=nil{http.Error(w,err.Error(),http.StatusInternalServerError);return};w.Header().Set("Content-Type","application/json; charset=utf-8");_,_=w.Write(data);return}
 	data,err:=os.ReadFile(filepath.Join(dir,"report.md"));if err!=nil{http.Error(w,err.Error(),http.StatusInternalServerError);return}

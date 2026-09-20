@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
 	"github.com/faizahmd2/vm-native-diagnos/internal/config"
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
@@ -36,30 +37,43 @@ func newInvestigateCmd() *cobra.Command {
 		if err := report.EnsureWritable(out); err != nil {
 			return fmt.Errorf("output directory unavailable: %w", err)
 		}
+		b, err := budget(budgetName)
+		if err != nil { return err }
+		if budgetName == "normal" { b, _ = budget(loadedCfg.Engine.Budget) }
+		invID := fmt.Sprintf("inv-%d", time.Now().UnixNano())
 		src, closeFn, err := targetSource(context.Background(), host, loadedCfg.Source.ReadTimeout)
 		if err != nil {
+			_ = report.WriteFailure(out, invID, host, trigger, hint, b, err.Error(), contract.StopError)
 			return err
 		}
 		defer closeFn()
 		reg, err := capability.BuildBuiltin()
-		if err != nil {
-			return err
-		}
-		b, err := budget(budgetName)
-		if err != nil {
-			return err
-		}
-		if budgetName == "normal" {
-			b, _ = budget(loadedCfg.Engine.Budget)
-		}
+		if err != nil { return err }
 		dec, err := makeDecisionProvider(loadedCfg, noAI)
 		if err != nil {
 			return err
 		}
 		eng := engine.New(engine.Options{Source: src, Registry: reg, Rules: rules.Default(), Decision: dec, Identity: identity.New(src), Budget: b, Logger: logger, ParallelWidth: loadedCfg.Engine.ParallelWidth, MaxFindings: loadedCfg.Report.MaxFindings, DecisionNotice: decisionNotice(loadedCfg, noAI)})
-		inv, err := eng.Run(context.Background(), engine.Request{Host: host, Trigger: trigger, Hint: hint, Dimension: contract.Dimension(dim)})
+		runCtx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			t := time.NewTicker(5 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-t.C:
+					logger.Info("investigation still running", "id", invID)
+				case <-done:
+					return
+				}
+			}
+		}()
+		inv, err := eng.Run(runCtx, engine.Request{ID: invID, Host: host, Trigger: trigger, Hint: hint, Dimension: contract.Dimension(dim)})
+		close(done)
+		cancel()
 		if err != nil {
-			return err
+			_ = report.WriteFailure(out, invID, host, trigger, hint, b, err.Error(), contract.StopError)
+			return fmt.Errorf("investigation failed completely: %w (failure report: %s)", err, filepath.Join(out, invID, "report.md"))
 		}
 		if loadedCfg.Narrator.Enabled {
 			if text, ne := narrator.NewRules().Narrate(context.Background(), inv); ne == nil {

@@ -71,6 +71,7 @@ func Load(path string) (*Config, error) {
 			return nil, err
 		}
 	}
+	normalize(&cfg)
 	applyEnv(&cfg)
 	if err := Validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
@@ -80,7 +81,7 @@ func Load(path string) (*Config, error) {
 
 // DiscoverPath returns the first conventional configuration file.
 func DiscoverPath() string {
-	candidates := []string{}
+	candidates := []string{"app.yaml", "app.yml", filepath.Join("configs", "app.yaml"), filepath.Join("configs", "app.yml")}
 	if executable, err := os.Executable(); err == nil {
 		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 			executable = resolved
@@ -88,7 +89,7 @@ func DiscoverPath() string {
 		dir := filepath.Dir(executable)
 		candidates = append(candidates, filepath.Join(dir, "app.yaml"), filepath.Join(dir, "app.yml"))
 	}
-	candidates = append(candidates, "app.yaml", "app.yml", filepath.Join("configs", "app.yaml"), filepath.Join("configs", "app.yml"))
+	candidates = append(candidates, filepath.Join("/etc", "vm-native-diagnos", "app.yaml"), filepath.Join("/etc", "vm-native-diagnos", "app.yml"))
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		candidates = append(candidates, filepath.Join(xdg, "diagnos", "config.yml"))
 	} else if home, err := os.UserHomeDir(); err == nil {
@@ -119,6 +120,14 @@ func defaults() Config {
 	cfg.Report.MaxFindings = 5
 	cfg.Server.Listen = "127.0.0.1:8080"
 	return cfg
+}
+
+func normalize(cfg *Config) {
+	key := strings.TrimSpace(cfg.Decision.APIKey)
+	switch key {
+	case "<replace-with-ai-key>", "replace-with-ai-key", "YOUR_AI_KEY", "CHANGE_ME":
+		cfg.Decision.APIKey = ""
+	}
 }
 
 func applyEnv(cfg *Config) {

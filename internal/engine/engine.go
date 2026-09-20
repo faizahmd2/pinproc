@@ -76,12 +76,16 @@ func New(o Options) *Engine {
 
 // Run executes the complete bounded descent.
 func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation, error) {
-	ctx, cancel := context.WithTimeout(ctx, absoluteMaxWall)
+	wall := e.opt.Budget.MaxWall
+	if wall <= 0 || wall > absoluteMaxWall { wall = absoluteMaxWall }
+	ctx, cancel := context.WithTimeout(ctx, wall)
 	defer cancel()
 	if e.opt.Source == nil || e.opt.Registry == nil || e.opt.Decision == nil {
 		return nil, fmt.Errorf("engine requires source, registry and decision")
 	}
 	start := e.opt.Clock()
+	e.opt.Logger.Info("investigation started", "id", req.ID, "host", req.Host, "budget", e.opt.Budget.MaxWall)
+	defer func() { e.opt.Logger.Info("investigation finished", "id", req.ID, "elapsed", e.opt.Clock().Sub(start)) }()
 	facts, err := e.opt.Source.Facts(ctx)
 	if err != nil {
 		return nil, err
