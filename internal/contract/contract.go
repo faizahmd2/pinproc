@@ -156,6 +156,7 @@ type Evidence struct {
 	Sources      []string      `json:"sources"`
 	Verify       []string      `json:"verify,omitempty"`
 	Unavailable  string        `json:"unavailable,omitempty"`
+	TimedOut     bool          `json:"timed_out,omitempty"`
 	Err          string        `json:"err,omitempty"`
 }
 
@@ -169,7 +170,21 @@ type Hypothesis struct {
 	Support     []string  `json:"support"`
 	Contradicts []string  `json:"contradicts,omitempty"`
 	Confidence  float64   `json:"confidence"`
-	Source      string    `json:"source"`
+	Source      string      `json:"source"`
+	LogContext  *LogContext `json:"log_context,omitempty"`
+}
+
+type LogContext struct {
+	Path string `json:"path"`
+	Line string `json:"line"`
+	Count int `json:"count,omitempty"`
+	LastSeen time.Time `json:"last_seen,omitempty"`
+}
+
+type Notice struct {
+	Capability string `json:"capability"`
+	Message string `json:"message"`
+	Count int `json:"count,omitempty"`
 }
 
 // Candidate is one legal next investigation.
@@ -285,6 +300,7 @@ type Investigation struct {
 	Limitations      []string        `json:"limitations,omitempty"`
 	StopReason       StopReason      `json:"stop_reason"`
 	IdentityGaps     int             `json:"identity_gaps,omitempty"`
+	Notices          []Notice        `json:"notices,omitempty"`
 	ObservedEntities []Entity        `json:"observed_entities,omitempty"`
 	Narrative        string          `json:"narrative,omitempty"`
 }
