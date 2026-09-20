@@ -73,35 +73,6 @@ func ParseCgroup(b []byte) []string {
 	return out
 }
 
-// Mount is the stable portion of a mountinfo record.
-type Mount struct {
-	ID, Parent, DevMajor, DevMinor, Root, MountPoint, Options string
-	FSType, Source                                            string
-}
-
-// ParseMountInfo parses mountinfo records.
-func ParseMountInfo(b []byte) []Mount {
-	out := []Mount{}
-	for _, l := range bytes.Split(b, []byte{'\n'}) {
-		f := bytes.Fields(l)
-		if len(f) < 7 {
-			continue
-		}
-		sep := -1
-		for i := 6; i < len(f); i++ {
-			if bytes.Equal(f[i], []byte("-")) {
-				sep = i
-				break
-			}
-		}
-		if sep < 0 || sep+2 >= len(f) {
-			continue
-		}
-		out = append(out, Mount{ID: string(f[0]), Parent: string(f[1]), DevMajor: string(f[2]), DevMinor: string(f[2]), Root: string(f[3]), MountPoint: string(f[4]), Options: string(f[5]), FSType: string(f[sep+1]), Source: string(f[sep+2])})
-	}
-	return out
-}
-
 // ParseSmaps parses bounded memory mapping regions.
 func ParseSmaps(b []byte, max int) []MapRegion {
 	if max <= 0 {
