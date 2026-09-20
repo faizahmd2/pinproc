@@ -59,7 +59,23 @@ func newInvestigateCmd() *cobra.Command {
 		}
 		eng := engine.New(engine.Options{Source: src, Registry: reg, Rules: rules.Default(), Decision: dec, Identity: identity.New(src), Budget: b, Logger: logger, ParallelWidth: loadedCfg.Engine.ParallelWidth, MaxFindings: loadedCfg.Report.MaxFindings, DecisionNotice: decisionNotice(loadedCfg, noAI)})
 		invID := fmt.Sprintf("inv-%d", time.Now().UnixNano())
-		inv, err := eng.Run(context.Background(), engine.Request{ID: invID, Host: host, Trigger: trigger, Hint: hint, Dimension: contract.Dimension(dim)})
+		runCtx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			t := time.NewTicker(5 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-t.C:
+					logger.Info("investigation still running", "id", invID)
+				case <-done:
+					return
+				}
+			}
+		}()
+		inv, err := eng.Run(runCtx, engine.Request{ID: invID, Host: host, Trigger: trigger, Hint: hint, Dimension: contract.Dimension(dim)})
+		close(done)
+		cancel()
 		if err != nil {
 			_ = report.WriteFailure(out, invID, host, trigger, hint, b, err.Error(), contract.StopError)
 			return fmt.Errorf("investigation failed completely: %w (failure report: %s)", err, filepath.Join(out, invID, "report.md"))
