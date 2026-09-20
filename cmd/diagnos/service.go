@@ -156,10 +156,7 @@ func installServiceBinary(source string) error {
 	if !info.Mode().IsRegular() { return fmt.Errorf("service executable %q is not a regular file", source) }
 	if info.Mode().Perm()&0111 == 0 { return fmt.Errorf("service executable %q is not executable", source) }
 	if err := os.MkdirAll(filepath.Dir(serviceBinaryPath), 0755); err != nil { return fmt.Errorf("create service binary directory: %w", err) }
-	if target, err := os.Stat(serviceBinaryPath); err == nil && os.SameFile(info, target) {
-		if err := os.Chmod(serviceBinaryPath, 0755); err != nil { return fmt.Errorf("fix service executable permissions: %w", err) }
-		return nil
-	}
+
 	data, err := os.ReadFile(source)
 	if err != nil { return fmt.Errorf("read service executable %q: %w", source, err) }
 	tmp, err := os.CreateTemp(filepath.Dir(serviceBinaryPath), ".vm-native-diagnos-*")
