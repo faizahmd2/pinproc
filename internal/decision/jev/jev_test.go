@@ -2,7 +2,7 @@ package jev
 
 import (
 	"context"
-	"github.com/faizahmd2/vm-native-diagnos/internal/decision"
+	"github.com/faizahmd2/pinproc/internal/decision"
 	"net/http"
 	"net/http/httptest"
 	"testing"
