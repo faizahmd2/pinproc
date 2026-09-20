@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
-	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
+	"github.com/faizahmd2/pinproc/internal/contract"
+	"github.com/faizahmd2/pinproc/internal/rules"
 )
 
 // Synthesize builds a bounded set of explicitly graded hypotheses.
