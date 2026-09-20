@@ -17,7 +17,6 @@ engine:
 decision:
   provider: jev
   api_key: "<replace-with-ai-key>"
-  api_key: "<replace-with-ai-key>"
   base_url: https://api.typesafe.ai
   model: jev-latest
   timeout: 10s
