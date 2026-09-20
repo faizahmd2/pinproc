@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/pinproc/internal/contract"
 	"io"
 	"os"
 	"path/filepath"
