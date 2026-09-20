@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"syscall"
 	"time"
 
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
