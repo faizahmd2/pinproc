@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -161,7 +162,15 @@ func (r *Resolver) ResolveMachine(ctx context.Context) (contract.MachineIdentity
 	if e != nil {
 		return contract.MachineIdentity{}, e
 	}
-	m := contract.MachineIdentity{Hostname: strings.TrimSpace(string(first(snap, "hostname"))), MachineID: strings.TrimSpace(string(first(snap, "machine_id"))), Kernel: strings.TrimSpace(string(first(snap, "version")))}
+	m := contract.MachineIdentity{
+		Hostname:     strings.TrimSpace(string(first(snap, "hostname"))),
+		MachineID:    strings.TrimSpace(string(first(snap, "machine_id"))),
+		Kernel:       strings.TrimSpace(string(first(snap, "version"))),
+		Architecture: runtime.GOARCH,
+	}
+	if r.src.Name() == "local" {
+		m.PrimaryIP = primaryIPv4()
+	}
 	for _, line := range strings.Split(string(first(snap, "os_release")), "\n") {
 		if strings.HasPrefix(line, "PRETTY_NAME=") {
 			m.OS = strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
@@ -359,4 +368,37 @@ func inferPaths(cmd []string, cwd, exe string) ([]string, []string) {
 		}
 	}
 	return logs, cfgs
+}
+
+func primaryIPv4() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			default:
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			return ip.String()
+		}
+	}
+	return ""
 }
