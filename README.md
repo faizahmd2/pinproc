@@ -1,6 +1,6 @@
-# vm-native-diagnos
+# pinproc
 
-vm-native-diagnos is a small, read-only Linux machine inspection service.
+pinproc is a small, read-only Linux machine inspection service.
 
 It runs continuously as a system service, survives reboots, and performs an inspection only when POST /trigger is called. At most one inspection can run at a time. Every inspection has a durable lifecycle state:
 
@@ -33,16 +33,16 @@ Copy and paste:
 
     ARCH="$(uname -m)"
     case "$ARCH" in
-      x86_64) ASSET="vm-native-diagnos_linux_amd64" ;;
-      aarch64|arm64) ASSET="vm-native-diagnos_linux_arm64" ;;
+      x86_64) ASSET="pinproc_linux_amd64" ;;
+      aarch64|arm64) ASSET="pinproc_linux_arm64" ;;
       *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
     esac
 
-    sudo install -d -m 0755 /etc/vm-native-diagnos
-    sudo curl -fL       "https://github.com/faizahmd2/vm-native-diagnos/releases/latest/download/$ASSET"       -o /usr/local/bin/vm-native-diagnos
-    sudo chmod 0755 /usr/local/bin/vm-native-diagnos
+    sudo install -d -m 0755 /etc/pinproc
+    sudo curl -fL       "https://github.com/faizahmd2/pinproc/releases/latest/download/$ASSET"       -o /usr/local/bin/pinproc
+    sudo chmod 0755 /usr/local/bin/pinproc
 
-    sudo curl -fL       "https://github.com/faizahmd2/vm-native-diagnos/releases/latest/download/app.yaml"       -o /etc/vm-native-diagnos/app.yaml
+    sudo curl -fL       "https://github.com/faizahmd2/pinproc/releases/latest/download/app.yaml"       -o /etc/pinproc/app.yaml
 
 The release workflow publishes these Linux assets from version tags. GitHub supports automated release management and release assets. citeturn472478search0turn472478search2
 
@@ -50,7 +50,7 @@ The release workflow publishes these Linux assets from version tags. GitHub supp
 
 Edit:
 
-    sudo vi /etc/vm-native-diagnos/app.yaml
+    sudo vi /etc/pinproc/app.yaml
 
 Set:
 
@@ -70,10 +70,10 @@ The default service settings are:
     service:
       user: ""
       group: ""
-      data_directory: /var/lib/vm-native-diagnos
+      data_directory: /var/lib/pinproc
 
     output:
-      directory: /var/lib/vm-native-diagnos/reports
+      directory: /var/lib/pinproc/reports
 
 When service.user is empty, installation uses the user who invoked sudo, for example ubuntu. When service.user is set to diagnos, the installer creates that dedicated service account when it does not already exist.
 
@@ -81,7 +81,7 @@ When service.user is empty, installation uses the user who invoked sudo, for exa
 
 Run:
 
-    sudo /usr/local/bin/vm-native-diagnos --config /etc/vm-native-diagnos/app.yaml service install
+    sudo /usr/local/bin/pinproc --config /etc/pinproc/app.yaml service install
 
 This command:
 
@@ -95,11 +95,11 @@ Systemd brings enabled services back during normal boot through the configured b
 
 Check it:
 
-    sudo systemctl status vm-native-diagnos
+    sudo systemctl status pinproc
 
 Follow logs:
 
-    sudo journalctl -u vm-native-diagnos -f
+    sudo journalctl -u pinproc -f
 
 Check service health:
 
@@ -115,7 +115,7 @@ The generated systemd unit restricts the service to these capabilities:
     CAP_SYS_PTRACE
     CAP_SYSLOG
 
-The unit also uses systemd filesystem and namespace restrictions and writes persistent state only below /var/lib/vm-native-diagnos.
+The unit also uses systemd filesystem and namespace restrictions and writes persistent state only below /var/lib/pinproc.
 
 ### Use the current user
 
@@ -127,7 +127,7 @@ For the simplest setup, keep:
 
 Then install with:
 
-    sudo /usr/local/bin/vm-native-diagnos --config /etc/vm-native-diagnos/app.yaml service install
+    sudo /usr/local/bin/pinproc --config /etc/pinproc/app.yaml service install
 
 The service runs as the invoking account rather than as root.
 
@@ -150,7 +150,7 @@ This is the recommended deployment shape when you want the inspection isolated f
 The installer can create this account automatically. When you prefer to create it yourself, run:
 
     sudo groupadd --system diagnos
-    sudo useradd --system --gid diagnos --home-dir /var/lib/vm-native-diagnos --no-create-home --shell /usr/sbin/nologin diagnos
+    sudo useradd --system --gid diagnos --home-dir /var/lib/pinproc --no-create-home --shell /usr/sbin/nologin diagnos
 
 Then keep service.user and service.group set to diagnos and run the service install command. Existing accounts are reused; the installer does not delete them.
 
@@ -215,7 +215,7 @@ Typical completed state:
 
 The state file is persistent:
 
-    /var/lib/vm-native-diagnos/reports/state.json
+    /var/lib/pinproc/reports/state.json
 
 If the machine or service is restarted while an inspection is running, the next service startup marks that inspection as interrupted instead of leaving an indefinitely running state behind.
 
@@ -237,7 +237,7 @@ For the human-readable report:
 
 Reports are retained in the configured report directory, with the latest completed investigation referenced by:
 
-    /var/lib/vm-native-diagnos/reports/latest.txt
+    /var/lib/pinproc/reports/latest.txt
 
 ## Failure behavior
 
@@ -257,14 +257,14 @@ The journal also contains lifecycle messages including:
 
 Follow them with:
 
-    sudo journalctl -u vm-native-diagnos -f
+    sudo journalctl -u pinproc -f
 
 ## Reboot test
 
 After installation:
 
-    sudo systemctl is-enabled vm-native-diagnos
-    sudo systemctl is-active vm-native-diagnos
+    sudo systemctl is-enabled pinproc
+    sudo systemctl is-active pinproc
 
 Then reboot:
 
@@ -272,7 +272,7 @@ Then reboot:
 
 After reconnecting:
 
-    sudo systemctl is-active vm-native-diagnos
+    sudo systemctl is-active pinproc
     curl -sS http://127.0.0.1:8080/healthz | jq .
 
 The service should be running again without manually launching the binary.
@@ -283,20 +283,20 @@ Download the new release binary over the installed path, then restart:
 
     ARCH="$(uname -m)"
     case "$ARCH" in
-      x86_64) ASSET="vm-native-diagnos_linux_amd64" ;;
-      aarch64|arm64) ASSET="vm-native-diagnos_linux_arm64" ;;
+      x86_64) ASSET="pinproc_linux_amd64" ;;
+      aarch64|arm64) ASSET="pinproc_linux_arm64" ;;
       *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
     esac
 
-    sudo curl -fL       "https://github.com/faizahmd2/vm-native-diagnos/releases/latest/download/$ASSET"       -o /usr/local/bin/vm-native-diagnos
-    sudo chmod 0755 /usr/local/bin/vm-native-diagnos
-    sudo systemctl restart vm-native-diagnos
+    sudo curl -fL       "https://github.com/faizahmd2/pinproc/releases/latest/download/$ASSET"       -o /usr/local/bin/pinproc
+    sudo chmod 0755 /usr/local/bin/pinproc
+    sudo systemctl restart pinproc
 
-Your existing /etc/vm-native-diagnos/app.yaml and report data remain in place.
+Your existing /etc/pinproc/app.yaml and report data remain in place.
 
 ## Remove the service
 
-    sudo /usr/local/bin/vm-native-diagnos service uninstall
+    sudo /usr/local/bin/pinproc service uninstall
 
 This removes the systemd service but deliberately preserves the configuration and reports.
 
@@ -321,8 +321,8 @@ These are useful for local debugging and fixture creation; they are not the prod
 
 make release produces only:
 
-    dist/vm-native-diagnos_linux_amd64
-    dist/vm-native-diagnos_linux_arm64
+    dist/pinproc_linux_amd64
+    dist/pinproc_linux_arm64
     dist/app.yaml
     dist/checksums.txt
 
