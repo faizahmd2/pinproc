@@ -61,8 +61,8 @@ func (s *Local) StartupCheck() error {
 
 // Facts reads cheap host capability information.
 func (s *Local) Facts(ctx context.Context) (contract.Facts, error) {
-	b := readSmall(filepath.Join(s.procRoot, "version"), 64<<10)
-	r := readSmall("/etc/os-release", 64<<10)
+	b := s.readSmallBounded(ctx, filepath.Join(s.procRoot, "version"), 64<<10)
+	r := s.readSmallBounded(ctx, "/etc/os-release", 64<<10)
 	f := contract.Facts{Kernel: strings.TrimSpace(string(b)), Root: os.Geteuid() == 0, Has: map[string]bool{"proc": true}}
 	for _, l := range strings.Split(string(r), "\n") {
 		if strings.HasPrefix(l, "ID=") {
@@ -331,6 +331,17 @@ func (s *Local) translate(p string) string {
 		return filepath.Join(s.sysRoot, strings.TrimPrefix(p, "/sys"))
 	}
 	return p
+}
+func (s *Local) readSmallBounded(ctx context.Context, path string, limit int) []byte {
+	ch := make(chan []byte, 1)
+	go func() { ch <- readSmall(path, limit) }()
+	t := time.NewTimer(2 * time.Second)
+	defer t.Stop()
+	select {
+	case b := <-ch: return b
+	case <-ctx.Done(): return nil
+	case <-t.C: return nil
+	}
 }
 func readSmall(p string, limit int) []byte {
 	f, e := os.Open(p)
