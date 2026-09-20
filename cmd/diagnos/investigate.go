@@ -54,7 +54,6 @@ func newInvestigateCmd() *cobra.Command {
 			return err
 		}
 		eng := engine.New(engine.Options{Source: src, Registry: reg, Rules: rules.Default(), Decision: dec, Identity: identity.New(src), Budget: b, Logger: logger, ParallelWidth: loadedCfg.Engine.ParallelWidth, MaxFindings: loadedCfg.Report.MaxFindings, DecisionNotice: decisionNotice(loadedCfg, noAI)})
-		invID := fmt.Sprintf("inv-%d", time.Now().UnixNano())
 		runCtx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		go func() {
