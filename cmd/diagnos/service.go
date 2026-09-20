@@ -16,6 +16,7 @@ import (
 
 const serviceUnitPath = "/etc/systemd/system/vm-native-diagnos.service"
 const serviceConfigPath = "/etc/vm-native-diagnos/app.yaml"
+const serviceBinaryPath = "/usr/local/bin/vm-native-diagnos"
 
 func newServiceCmd() *cobra.Command {
 	run := newServeCmd()
@@ -57,7 +58,8 @@ func newServiceInstallCmd() *cobra.Command {
 			if err := installConfig(cfgFile, serviceUser, serviceGroup); err != nil { return err }
 			exe, err := os.Executable(); if err != nil { return err }
 			if resolved, err := filepath.EvalSymlinks(exe); err == nil { exe = resolved }
-			if err := os.WriteFile(serviceUnitPath, []byte(renderServiceUnit(exe, serviceUser, serviceGroup, dataDir)), 0644); err != nil { return fmt.Errorf("write systemd unit: %w", err) }
+			if err := installServiceBinary(exe); err != nil { return err }
+			if err := os.WriteFile(serviceUnitPath, []byte(renderServiceUnit(serviceBinaryPath, serviceUser, serviceGroup, dataDir)), 0644); err != nil { return fmt.Errorf("write systemd unit: %w", err) }
 			if err := runSystemctl("daemon-reload"); err != nil { return err }
 			if err := runSystemctl("enable", "vm-native-diagnos.service"); err != nil { return err }
 			if err := runSystemctl("restart", "vm-native-diagnos.service"); err != nil { return err }
@@ -148,6 +150,30 @@ func installConfig(sourcePath, serviceUser, serviceGroup string) error {
 	return nil
 }
 
+func installServiceBinary(source string) error {
+	info, err := os.Stat(source)
+	if err != nil { return fmt.Errorf("service executable %q is unavailable: %w", source, err) }
+	if !info.Mode().IsRegular() { return fmt.Errorf("service executable %q is not a regular file", source) }
+	if info.Mode().Perm()&0111 == 0 { return fmt.Errorf("service executable %q is not executable", source) }
+	if err := os.MkdirAll(filepath.Dir(serviceBinaryPath), 0755); err != nil { return fmt.Errorf("create service binary directory: %w", err) }
+	if target, err := os.Stat(serviceBinaryPath); err == nil && os.SameFile(info, target) {
+		if err := os.Chmod(serviceBinaryPath, 0755); err != nil { return fmt.Errorf("fix service executable permissions: %w", err) }
+		return nil
+	}
+	data, err := os.ReadFile(source)
+	if err != nil { return fmt.Errorf("read service executable %q: %w", source, err) }
+	tmp, err := os.CreateTemp(filepath.Dir(serviceBinaryPath), ".vm-native-diagnos-*")
+	if err != nil { return fmt.Errorf("stage service executable: %w", err) }
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0755); err != nil { _ = tmp.Close(); return fmt.Errorf("chmod staged service executable: %w", err) }
+	if err := tmp.Chown(0, 0); err != nil { _ = tmp.Close(); return fmt.Errorf("chown staged service executable: %w", err) }
+	if _, err := tmp.Write(data); err != nil { _ = tmp.Close(); return fmt.Errorf("write staged service executable: %w", err) }
+	if err := tmp.Sync(); err != nil { _ = tmp.Close(); return fmt.Errorf("sync staged service executable: %w", err) }
+	if err := tmp.Close(); err != nil { return fmt.Errorf("close staged service executable: %w", err) }
+	if err := os.Rename(tmpName, serviceBinaryPath); err != nil { return fmt.Errorf("install service executable at %s: %w", serviceBinaryPath, err) }
+	return nil
+}
 func renderServiceUnit(exe, serviceUser, serviceGroup, dataDir string) string {
 	return fmt.Sprintf("[Unit]\nDescription=vm-native-diagnos Linux inspection service\nAfter=local-fs.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart=%s service run --config %s\nWorkingDirectory=%s\nUser=%s\nGroup=%s\nRestart=on-failure\nRestartSec=2s\nTimeoutStopSec=30s\nKillSignal=SIGTERM\nEnvironment=HOME=%s\n\nCapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\nAmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\n\nProtectSystem=strict\nProtectHome=true\nProtectKernelModules=true\nProtectKernelTunables=true\nProtectControlGroups=true\nPrivateTmp=true\nReadWritePaths=%s\nRestrictNamespaces=true\nRestrictRealtime=true\nLockPersonality=true\n\n[Install]\nWantedBy=multi-user.target\n", exe, serviceConfigPath, dataDir, serviceUser, serviceGroup, dataDir, dataDir)
 }
