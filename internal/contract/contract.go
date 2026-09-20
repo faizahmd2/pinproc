@@ -280,30 +280,12 @@ type MachineIdentity struct {
 	Uptime       time.Duration `json:"uptime_ns,omitempty"`
 }
 
-// MachineSnapshot contains a compact current-state summary for the report.
-type MachineSnapshot struct {
-	CPUs                 int     `json:"cpus,omitempty"`
-	CPUUtilizationPct    float64 `json:"cpu_utilization_pct,omitempty"`
-	Load1                float64 `json:"load1,omitempty"`
-	MemoryTotalBytes     uint64  `json:"memory_total_bytes,omitempty"`
-	MemoryAvailableBytes uint64  `json:"memory_available_bytes,omitempty"`
-	MemoryUsedBytes      uint64  `json:"memory_used_bytes,omitempty"`
-	MemoryUsedPct        float64 `json:"memory_used_pct,omitempty"`
-	SwapUsedPct          float64 `json:"swap_used_pct,omitempty"`
-	RootDiskPath         string  `json:"root_disk_path,omitempty"`
-	RootDiskTotalBytes   uint64  `json:"root_disk_total_bytes,omitempty"`
-	RootDiskUsedBytes    uint64  `json:"root_disk_used_bytes,omitempty"`
-	RootDiskFreeBytes    uint64  `json:"root_disk_free_bytes,omitempty"`
-	RootDiskUsedPct      float64 `json:"root_disk_used_pct,omitempty"`
-}
-
 // Investigation is the stable JSON contract.
 type Investigation struct {
 	SchemaVersion    int             `json:"schema_version"`
 	ID               string          `json:"id"`
 	Host             string          `json:"host"`
 	Machine          MachineIdentity `json:"machine"`
-	MachineSnapshot  MachineSnapshot `json:"machine_snapshot"`
 	Facts            Facts           `json:"facts"`
 	Trigger          string          `json:"trigger"`
 	Hint             string          `json:"hint,omitempty"`

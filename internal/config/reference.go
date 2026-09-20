@@ -25,8 +25,11 @@ decision:
 narrator:
   enabled: true
 
+decision:
+  api_key: "<replace-with-ai-key>"
+
 output:
-  directory: ~/diagnos/reports
+  directory: ~/pinproc/reports
 `
 
 func WriteReference(path string, force bool) error {
