@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,4 +63,3 @@ func (s *RecordingSource) saveSnapshot(snap Snapshot) error {
 	return os.WriteFile(filepath.Join(root,"index.json"),append(b,'\n'),0644)
 }
 func errorString(err error)string{if err==nil{return ""};return err.Error()}
-var _ = strconv.Itoa
