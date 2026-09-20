@@ -216,6 +216,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 			}
 			capReads, re := safeReads(cap, c.Scope, inv.Facts)
 			if re != nil {
+				ev := failureEvidence(cap, c.Scope, "panic", re.Error())
+				inv.Evidence = append(inv.Evidence, ev)
+				registerObserved(inv, ev)
 				addNotice(inv, cap.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(cap.ID))
 				inv.Path = append(inv.Path, contract.Step{Depth: cap.Level, Capability: cap.ID, Scope: c.Scope.ID, DecidedBy: "engine", Err: re.Error()})
 				valid = valid[:len(valid)-1]
@@ -263,7 +266,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 				Prior:  inv.Evidence,
 			})
 			if pe != nil {
-				if strings.HasPrefix(pe.Error(), "panic:") { addNotice(inv, cap.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(cap.ID)) } else { addNotice(inv, cap.ID, "capability failed — "+truncate(pe.Error(), 150)) }
+				class := "error"
+				if strings.HasPrefix(pe.Error(), "panic:") { class = "panic"; addNotice(inv, cap.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(cap.ID)) } else { addNotice(inv, cap.ID, "capability failed — "+truncate(pe.Error(), 150)) }
+				newEv = append(newEv, failureEvidence(cap, c.Scope, class, pe.Error()))
 				inv.Path = append(inv.Path, contract.Step{
 					Depth:      cap.Level,
 					Capability: cap.ID,
@@ -354,7 +359,16 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 
 func (e *Engine) sweep(ctx context.Context, inv *contract.Investigation) ([]contract.Evidence, contract.Spend, error) {
 	caps := e.opt.Registry.ForLevel(contract.L1Machine)
-	reads := unionReads(caps, inv.Facts)
+	var reads []source.Read
+	for _, cap := range caps {
+		rr, re := safeReads(cap, contract.Entity{Kind: contract.EntityMachine, ID: "machine"}, inv.Facts)
+		if re != nil {
+			addNotice(inv, cap.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(cap.ID))
+			continue
+		}
+		reads = append(reads, rr...)
+	}
+	reads = dedupReads(reads)
 	s, err := e.opt.Source.Sample(ctx, reads, e.opt.Budget.SampleWindow)
 	if err != nil {
 		return nil, contract.Spend{}, err
@@ -371,6 +385,7 @@ func (e *Engine) sweep(ctx context.Context, inv *contract.Investigation) ([]cont
 		if pe != nil {
 			e.opt.Logger.Warn("capability parse failed", "capability", c.ID, "error", pe)
 			if strings.HasPrefix(pe.Error(), "panic:") { addNotice(inv, c.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(c.ID)) } else { addNotice(inv, c.ID, "capability failed — "+truncate(pe.Error(), 150)) }
+			out = append(out, failureEvidence(c, contract.Entity{Kind: contract.EntityMachine, ID: "machine"}, "error", pe.Error()))
 			continue
 		}
 		out = append(out, ev)
@@ -674,7 +689,7 @@ func addNotice(inv *contract.Investigation, capabilityID, msg string) {
 }
 
 func sampledFailure(cap capability.Capability, c contract.Candidate, s source.Sample) (string,string) {
-	reads:=cap.Reads(c.Scope,contract.Facts{})
+	reads,_:=safeReads(cap,c.Scope,contract.Facts{})
 	for _, rr:=range reads {
 		for _, raw:=range append(s.T0.Reads[rr.Key],s.T1.Reads[rr.Key]...) {
 			if raw.Err==nil { continue }
