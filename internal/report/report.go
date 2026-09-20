@@ -100,30 +100,172 @@ func atomic(path string, b []byte) error {
 
 func RenderMarkdown(inv *contract.Investigation) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# pinproc — %s\n\n", inv.Host)
-	if len(inv.Hypotheses) > 0 { b.WriteString(inv.Hypotheses[0].Statement) } else { b.WriteString("No material anomaly was established.") }
+	fmt.Fprintf(&b, "# pinproc — %s\n\n", displayHost(inv))
+	renderMachineSnapshot(&b, inv)
+
+	if len(inv.Hypotheses) > 0 {
+		b.WriteString(inv.Hypotheses[0].Statement)
+	} else {
+		b.WriteString("No material anomaly was established.")
+	}
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "%s · %d levels · budget: %s\n", formatDuration(inv.Duration), inv.Spent.Depth, budgetName(inv))
+
 	for i, h := range inv.Hypotheses {
 		fmt.Fprintf(&b, "\n%d. %s [%s] %.2f\n", i+1, h.Statement, h.Grade, h.Confidence)
-		if detail := findingDetail(inv,h); detail != "" { fmt.Fprintf(&b, "   %s\n", detail) }
+		if detail := findingDetail(inv, h); detail != "" {
+			fmt.Fprintf(&b, "   %s\n", detail)
+		}
 		if h.LogContext != nil {
 			line := strings.ReplaceAll(h.LogContext.Line, "\"", "'")
-			extra := ""; if h.LogContext.Count > 1 { extra = fmt.Sprintf(" (x %d)", h.LogContext.Count) }
+			extra := ""
+			if h.LogContext.Count > 1 {
+				extra = fmt.Sprintf(" (x %d)", h.LogContext.Count)
+			}
 			fmt.Fprintf(&b, "   log: %s — %q%s\n", h.LogContext.Path, line, extra)
 		}
 	}
-	if len(inv.Hypotheses)>0 {
+
+	if detailedDiagnostics(inv) && len(inv.Hypotheses) > 0 {
 		b.WriteString("\n")
-		renderChain(&b,inv,inv.Hypotheses[0].Entity)
-		if cmds:=verifyForTopFinding(inv,inv.Hypotheses[0].Entity);len(cmds)>0 {
-			b.WriteString("Verify\n");for _,cmd:=range cmds{fmt.Fprintf(&b,"   → %s\n",cmd)}
+		renderChain(&b, inv, inv.Hypotheses[0].Entity)
+		if cmds := verifyForTopFinding(inv, inv.Hypotheses[0].Entity); len(cmds) > 0 {
+			b.WriteString("Verify\n")
+			for _, cmd := range cmds {
+				fmt.Fprintf(&b, "   → %s\n", cmd)
+			}
+		}
+		if len(inv.NotInvestigated) > 0 {
+			b.WriteString("\nNot investigated\n")
+			for _, c := range inv.NotInvestigated {
+				fmt.Fprintf(&b, "   %s(%s) — %s\n", c.Capability, c.Scope.ID, c.Reason)
+			}
 		}
 	}
-	if len(inv.NotInvestigated)>0 { b.WriteString("\nNot investigated\n");for _,c:=range inv.NotInvestigated{fmt.Fprintf(&b,"   %s(%s) — %s\n",c.Capability,c.Scope.ID,c.Reason)} }
-	if len(inv.Limitations)>0 { b.WriteString("\nLimitations\n");for _,x:=range unique(inv.Limitations){fmt.Fprintf(&b,"   - %s\n",x)} }
-	if len(inv.Notices)>0 { b.WriteString("\n## Notices\n\n");for _,n:=range inv.Notices{fmt.Fprintf(&b,"⚠ %s — %s",n.Capability,n.Message);if n.Count>1{fmt.Fprintf(&b," (x%d)",n.Count)};b.WriteString("\n")} }
+
+	if len(inv.Limitations) > 0 {
+		b.WriteString("\nLimitations\n")
+		for _, x := range unique(inv.Limitations) {
+			fmt.Fprintf(&b, "   - %s\n", x)
+		}
+	}
+	if len(inv.Notices) > 0 {
+		b.WriteString("\n## Notices\n\n")
+		for _, n := range inv.Notices {
+			fmt.Fprintf(&b, "⚠ %s — %s", n.Capability, n.Message)
+			if n.Count > 1 {
+				fmt.Fprintf(&b, " (x%d)", n.Count)
+			}
+			b.WriteString("\n")
+		}
+	}
 	return b.String()
+}
+
+func displayHost(inv *contract.Investigation) string {
+	if inv != nil && isLocalReportHost(inv.Host) && inv.Machine.Hostname != "" {
+		return inv.Machine.Hostname
+	}
+	if inv != nil && inv.Host != "" {
+		return inv.Host
+	}
+	return "localhost"
+}
+
+func isLocalReportHost(host string) bool {
+	return host == "" || strings.EqualFold(host, "localhost") || host == "127.0.0.1"
+}
+
+func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
+	if inv == nil {
+		return
+	}
+	m := inv.Machine
+	s := inv.MachineSnapshot
+	b.WriteString("## Machine snapshot\n\n")
+	if m.PrimaryIP != "" {
+		fmt.Fprintf(b, "IP: %s\n", m.PrimaryIP)
+	}
+	if m.OS != "" {
+		fmt.Fprintf(b, "OS: %s\n", m.OS)
+	}
+	if m.Kernel != "" {
+		fmt.Fprintf(b, "Kernel: %s\n", kernelShort(m.Kernel))
+	}
+	if m.Architecture != "" || m.CPUs > 0 {
+		fmt.Fprintf(b, "Arch: %s · CPUs: %d\n", m.Architecture, m.CPUs)
+	}
+	if m.Uptime > 0 {
+		fmt.Fprintf(b, "Uptime: %s\n", humanDuration(m.Uptime))
+	}
+	if s.CPUUtilizationPct > 0 || s.Load1 > 0 {
+		fmt.Fprintf(b, "CPU: %.0f%% used · load1 %.2f\n", s.CPUUtilizationPct, s.Load1)
+	}
+	if s.MemoryTotalBytes > 0 {
+		fmt.Fprintf(b, "Memory: %s / %s used · %.0f%% · swap %.0f%%\n",
+			formatBytes(s.MemoryUsedBytes), formatBytes(s.MemoryTotalBytes), s.MemoryUsedPct, s.SwapUsedPct)
+	}
+	if s.RootDiskTotalBytes > 0 {
+		fmt.Fprintf(b, "Disk %s: %s / %s used · %.0f%%\n",
+			s.RootDiskPath, formatBytes(s.RootDiskUsedBytes), formatBytes(s.RootDiskTotalBytes), s.RootDiskUsedPct)
+	}
+	b.WriteString("\n")
+}
+
+func detailedDiagnostics(inv *contract.Investigation) bool {
+	if inv == nil {
+		return false
+	}
+	if inv.StopReason == contract.StopError || inv.StopReason == contract.StopBudgetTime {
+		return true
+	}
+	for _, e := range inv.Evidence {
+		if e.Err != "" || e.Unavailable != "" || e.TimedOut {
+			return true
+		}
+	}
+	return false
+}
+
+func kernelShort(kernel string) string {
+	kernel = strings.TrimSpace(kernel)
+	if strings.HasPrefix(kernel, "Linux version ") {
+		kernel = strings.TrimPrefix(kernel, "Linux version ")
+	}
+	if i := strings.IndexByte(kernel, ' '); i >= 0 {
+		kernel = kernel[:i]
+	}
+	return kernel
+}
+
+func humanDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.0fs", d.Seconds())
+	}
+	h := int(d / time.Hour)
+	d -= time.Duration(h) * time.Hour
+	m := int(d / time.Minute)
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	return fmt.Sprintf("%dm", m)
+}
+
+func formatBytes(v uint64) string {
+	const unit = 1024.0
+	if v == 0 {
+		return "0 B"
+	}
+	if float64(v) >= unit*unit*unit {
+		return fmt.Sprintf("%.1f GiB", float64(v)/(unit*unit*unit))
+	}
+	if float64(v) >= unit*unit {
+		return fmt.Sprintf("%.1f MiB", float64(v)/(unit*unit))
+	}
+	if float64(v) >= unit {
+		return fmt.Sprintf("%.1f KiB", float64(v)/unit)
+	}
+	return fmt.Sprintf("%d B", v)
 }
 
 func findingDetail(inv *contract.Investigation,h contract.Hypothesis)string{
