@@ -1,6 +1,7 @@
 package process
 
 import (
+	"os"
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability/spec"
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 	"github.com/faizahmd2/vm-native-diagnos/internal/procfs"
@@ -29,6 +30,7 @@ type IOFacts struct {
 type FileFacts struct {
 	PID                                              int64
 	Total, Regular, Sockets, Pipes, Devices, Deleted uint64
+	DeletedBytes uint64
 	Samples                                          []FDEntry
 }
 
@@ -144,7 +146,7 @@ func Sockets() spec.Capability {
 func MemoryMaps() spec.Capability {
 	return spec.Capability{
 		ID: "process.memory_maps", Dimension: contract.DimensionMemory, Level: contract.L4Mechanism, Kind: specKindSnapshot(),
-		Accepts: contract.EntityProcess, Cost: contract.CostHigh, Summary: "bounded /proc/<pid>/smaps region inventory", LeadsTo: nil,
+		Accepts: contract.EntityProcess, Cost: contract.CostHigh, Summary: "bounded /proc/<pid>/smaps region inventory", Requires: []string{"root_or_ptrace"}, LeadsTo: nil,
 		Reads: func(e contract.Entity, _ contract.Facts) []source.Read {
 			p := depthEntityPID(e)
 			return []source.Read{{Key: "proc.smaps", Path: "/proc/" + p + "/smaps", Kind: source.ReadFile, MaxBytes: 2 << 20, Optional: true}}
@@ -185,14 +187,16 @@ func parseIO(in spec.ParseInput) (contract.Evidence, error) {
 func parseFiles(in spec.ParseInput) (contract.Evidence, error) {
 	pid := depthEntityPID(in.Scope)
 	rows := []FDEntry{}
-	var reg, socks, pipes, dev, deleted uint64
+	var reg, socks, pipes, dev, deleted, deletedBytes uint64
 	for path, data := range depthIndex(in.Sample.T1.Reads["proc.fd"]) {
-		_ = data
 		fd := fdNumber(path)
 		target := string(data)
 		kind := "other"
 		if strings.HasSuffix(target, " (deleted)") {
 			deleted++
+			if st, err := os.Stat("/proc/" + pid + "/fd/" + strconv.Itoa(fd)); err == nil && st.Size() > 0 {
+				deletedBytes += uint64(st.Size())
+			}
 		}
 		switch {
 		case strings.HasPrefix(target, "socket:"):
@@ -212,8 +216,8 @@ func parseFiles(in spec.ParseInput) (contract.Evidence, error) {
 			rows = append(rows, FDEntry{FD: fd, Target: target, Kind: kind})
 		}
 	}
-	f := FileFacts{PID: parsePID(pid), Total: reg + socks + pipes + dev, Samples: rows, Regular: reg, Sockets: socks, Pipes: pipes, Devices: dev, Deleted: deleted}
-	return contract.Evidence{ID: "ev-process-" + pid + "-files", Capability: "process.files", Entity: contract.Entity{Kind: contract.EntityProcess, ID: "pid:" + pid}, Dimension: contract.DimensionFilesystem, Level: contract.L3Execution, CollectedAt: in.Sample.T1.At, Facts: f, Observations: []contract.Observation{{Key: "proc.fd_total", Value: float64(f.Total), Unit: "count"}, {Key: "proc.fd_sockets", Value: float64(socks), Unit: "count"}, {Key: "proc.fd_pipes", Value: float64(pipes), Unit: "count"}, {Key: "proc.fd_regular", Value: float64(reg), Unit: "count"}, {Key: "proc.fd_deleted", Value: float64(deleted), Unit: "count"}}, Sources: []string{"/proc/" + pid + "/fd/*"}, Verify: []string{"ls -l /proc/" + pid + "/fd"}}, nil
+	f := FileFacts{PID: parsePID(pid), Total: reg + socks + pipes + dev, Samples: rows, Regular: reg, Sockets: socks, Pipes: pipes, Devices: dev, Deleted: deleted, DeletedBytes: deletedBytes}
+	return contract.Evidence{ID: "ev-process-" + pid + "-files", Capability: "process.files", Entity: contract.Entity{Kind: contract.EntityProcess, ID: "pid:" + pid}, Dimension: contract.DimensionFilesystem, Level: contract.L3Execution, CollectedAt: in.Sample.T1.At, Facts: f, Observations: []contract.Observation{{Key: "proc.fd_total", Value: float64(f.Total), Unit: "count"}, {Key: "proc.fd_sockets", Value: float64(socks), Unit: "count"}, {Key: "proc.fd_pipes", Value: float64(pipes), Unit: "count"}, {Key: "proc.fd_regular", Value: float64(reg), Unit: "count"}, {Key: "proc.fd_deleted", Value: float64(deleted), Unit: "count"}, {Key: "proc.fd_deleted_bytes", Value: float64(deletedBytes), Unit: "bytes"}}, Sources: []string{"/proc/" + pid + "/fd/*"}, Verify: []string{"ls -l /proc/" + pid + "/fd"}}, nil
 }
 func parseSockets(in spec.ParseInput) (contract.Evidence, error) {
 	pid := depthEntityPID(in.Scope)

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"sync"
 	"time"
 )
@@ -19,6 +20,7 @@ type Local struct {
 	procRoot, sysRoot string
 	bufPool           sync.Pool
 	maxBytes          int
+	readTimeout       time.Duration
 }
 
 // NewLocal returns a local source with configurable roots.
@@ -32,19 +34,36 @@ func NewLocal(procRoot, sysRoot string, maxBytes int) *Local {
 	if maxBytes <= 0 {
 		maxBytes = 1 << 20
 	}
-	s := &Local{procRoot: procRoot, sysRoot: sysRoot, maxBytes: maxBytes}
+	s := &Local{procRoot: procRoot, sysRoot: sysRoot, maxBytes: maxBytes, readTimeout: 2 * time.Second}
 	s.bufPool.New = func() any { return make([]byte, 32*1024) }
+	return s
+}
+
+// NewLocalWithTimeout returns a local source with a configured risky-read timeout.
+func NewLocalWithTimeout(procRoot, sysRoot string, maxBytes int, timeout time.Duration) *Local {
+	s := NewLocal(procRoot, sysRoot, maxBytes)
+	if timeout > 0 { s.readTimeout = timeout }
 	return s
 }
 
 // Name returns the source name.
 func (s *Local) Name() string { return "local" }
 
+// StartupCheck validates the minimum host contract before an investigation begins.
+func (s *Local) StartupCheck() error {
+	f, err := os.Open(filepath.Join(s.procRoot, "stat"))
+	if err != nil { return fmt.Errorf("proc filesystem unavailable: %w", err) }
+	defer f.Close()
+	var one [1]byte
+	if _, err := f.Read(one[:]); err != nil { return fmt.Errorf("proc filesystem unreadable: %w", err) }
+	return nil
+}
+
 // Facts reads cheap host capability information.
 func (s *Local) Facts(ctx context.Context) (contract.Facts, error) {
 	b := readSmall(filepath.Join(s.procRoot, "version"), 64<<10)
 	r := readSmall("/etc/os-release", 64<<10)
-	f := contract.Facts{Kernel: strings.TrimSpace(string(b)), Has: map[string]bool{"proc": true}}
+	f := contract.Facts{Kernel: strings.TrimSpace(string(b)), Root: os.Geteuid() == 0, Has: map[string]bool{"proc": true}}
 	for _, l := range strings.Split(string(r), "\n") {
 		if strings.HasPrefix(l, "ID=") {
 			f.OSID = strings.Trim(strings.TrimPrefix(l, "ID="), "\"")
@@ -123,12 +142,14 @@ func (s *Local) Sample(ctx context.Context, reads []Read, w time.Duration) (Samp
 func (s *Local) Close() error { return nil }
 
 func (s *Local) readOne(r Read, p string, buf []byte) Raw {
+	if r.Kind == ReadKmsg { return s.readKmsg(p, r.MaxBytes) }
+	if isRisky(r.Kind, r.Key, p) { return s.readWithDeadline(r, p, s.readTimeout) }
 	raw := Raw{Key: r.Key, Path: p}
 	limit := r.MaxBytes
 	if limit <= 0 {
 		limit = s.maxBytes
 	}
-	if r.Kind == ReadLink {
+	if r.Kind == ReadLink || r.Kind == ReadGlobLinks {
 		v, e := os.Readlink(p)
 		if e != nil {
 			raw.Err = e
@@ -166,10 +187,66 @@ func (s *Local) readOne(r Read, p string, buf []byte) Raw {
 	return raw
 }
 
+func isRisky(kind ReadKind, key, path string) bool {
+	if kind == ReadLink || kind == ReadGlobLinks { return true }
+	return strings.Contains(key, "smaps") || strings.Contains(path, "/maps") || strings.Contains(path, "/smaps")
+}
+
+func (s *Local) readWithDeadline(r Read, p string, timeout time.Duration) Raw {
+	type result struct{ data []byte; err error }
+	ch := make(chan result, 1)
+	go func() {
+		if r.Kind == ReadLink || r.Kind == ReadGlobLinks {
+			v, e := os.Readlink(p); ch <- result{data: []byte(v), err: e}; return
+		}
+		f, e := os.Open(p)
+		if e != nil { ch <- result{err: e}; return }
+		defer f.Close()
+		data, e := io.ReadAll(io.LimitReader(f, int64(maxReadBytes(r, s.maxBytes))))
+		ch <- result{data: data, err: e}
+	}()
+	select {
+	case res := <-ch:
+		return Raw{Key: r.Key, Path: p, Data: res.data, Err: res.err}
+	case <-time.After(timeout):
+		return Raw{Key: r.Key, Path: p, Err: fmt.Errorf("read timed out after %s (path may be on a hung filesystem)", timeout)}
+	}
+}
+
+func maxReadBytes(r Read, fallback int) int { if r.MaxBytes > 0 { return r.MaxBytes }; return fallback }
+
+func (s *Local) readKmsg(p string, maxBytes int) Raw {
+	raw := Raw{Key: "kmsg", Path: p}
+	limit := maxReadBytes(Read{MaxBytes: maxBytes}, s.maxBytes)
+	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil { raw.Err = err; return raw }
+	defer f.Close()
+	deadline := time.Now().Add(500*time.Millisecond)
+	lines := 0
+	buf := make([]byte, 8192)
+	for len(raw.Data) < limit && lines < 500 && time.Now().Before(deadline) {
+		n, e := f.Read(buf)
+		if n > 0 {
+			remain := limit-len(raw.Data); if n > remain { n = remain }
+			raw.Data = append(raw.Data, buf[:n]...); lines += bytesCountNewlines(buf[:n])
+		}
+		if e != nil {
+			if errors.Is(e, syscall.EAGAIN) || errors.Is(e, syscall.EWOULDBLOCK) { break }
+			raw.Err = e; break
+		}
+	}
+	return raw
+}
+func bytesCountNewlines(b []byte) int { n:=0; for _, x := range b { if x=='\n' { n++ } }; return n }
+
 func (s *Local) expandRead(r Read) ([]string, error) {
 	switch r.Kind {
-	case ReadFile, ReadLink, ReadGlobLinks:
+	case ReadFile, ReadLink:
 		return []string{s.translate(r.Path)}, nil
+	case ReadKmsg:
+		return []string{r.Path}, nil
+	case ReadGlobLinks:
+		return s.expandGlob(r.Path)
 	case ReadDirNames:
 		dir := s.translate(r.Path)
 		es, e := os.ReadDir(dir)

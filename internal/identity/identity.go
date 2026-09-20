@@ -3,9 +3,14 @@ package identity
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
+	"encoding/json"
+	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
@@ -14,7 +19,13 @@ import (
 )
 
 // Resolver resolves Linux process and machine identity from read-only sources.
-type Resolver struct{ src source.Source }
+type dockerContainer struct { ID string `json:"Id"`; Names []string `json:"Names"`; Image string `json:"Image"`; Labels map[string]string `json:"Labels"` }
+
+type Resolver struct {
+	src source.Source
+	dockerOnce sync.Once
+	dockerContainers map[string]dockerContainer
+}
 
 // New returns an identity resolver bound to a source.
 func New(src source.Source) *Resolver { return &Resolver{src: src} }
@@ -72,6 +83,16 @@ func (r *Resolver) Resolve(ctx context.Context, pid string) (contract.Service, e
 	}
 	if runtime, id := containerID(paths); id != "" {
 		svc.Container = &contract.ContainerRef{Runtime: runtime, ID: id}
+		if r.src.Name() != "replay" && !strings.HasPrefix(r.src.Name(), "replay:") {
+			if info, ok := r.dockerInfo(ctx, id); ok {
+			if len(info.Names) > 0 { svc.Container.Name = strings.TrimPrefix(info.Names[0], "/") }
+			svc.Container.Image = info.Image
+			if info.Labels != nil {
+				svc.Container.PodName = info.Labels["io.kubernetes.pod.name"]
+				svc.Container.Namespace = info.Labels["io.kubernetes.namespace"]
+			}
+			}
+		}
 		if svc.Name == "" {
 			svc.Name = runtime + ":" + shortID(id)
 			svc.NameSource = contract.ProvenanceDocker
@@ -199,6 +220,41 @@ func shortID(s string) string {
 	}
 	return s
 }
+func (r *Resolver) dockerInfo(ctx context.Context, id string) (dockerContainer, bool) {
+	r.dockerOnce.Do(func() {
+		r.dockerContainers = map[string]dockerContainer{}
+		dialer := &net.Dialer{Timeout: 500 * time.Millisecond}
+		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "unix", "/var/run/docker.sock")
+		}}
+		client := &http.Client{Transport: transport, Timeout: 500 * time.Millisecond}
+		defer transport.CloseIdleConnections()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v1.41/version", nil)
+		if err != nil { return }
+		resp, err := client.Do(req)
+		if err != nil { return }
+		_, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 { return }
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v1.41/containers/json?all=0", nil)
+		if err != nil { return }
+		resp, err = client.Do(req)
+		if err != nil { return }
+		defer resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 { return }
+		var list []dockerContainer
+		if json.NewDecoder(resp.Body).Decode(&list) != nil { return }
+		for _, item := range list {
+			r.dockerContainers[item.ID] = item
+		}
+	})
+	for full, info := range r.dockerContainers {
+		if strings.HasPrefix(full, id) || strings.HasPrefix(id, full) {
+			return info, true
+		}
+	}
+	return dockerContainer{}, false
+}
+
 func display(s contract.Service, pid string) string {
 	if s.Name == "" {
 		return "pid " + pid

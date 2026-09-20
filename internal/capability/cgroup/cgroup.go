@@ -99,6 +99,7 @@ func parseKV(data []byte) map[string]uint64 {
 }
 
 func parseCPU(in spec.ParseInput) (contract.Evidence, error) {
+	stats0 := parseKV(rawAt(in.Sample.T0, "cgroup.cpu.stat"))
 	stats := parseKV(raw(in.Sample.T1, "cgroup.cpu.stat"))
 	max := strings.Fields(string(raw(in.Sample.T1, "cgroup.cpu.max")))
 	f := CPUFacts{UsageUsec: stats["usage_usec"], NrPeriods: stats["nr_periods"], NrThrottled: stats["nr_throttled"], ThrottledUsec: stats["throttled_usec"]}
@@ -108,6 +109,10 @@ func parseCPU(in spec.ParseInput) (contract.Evidence, error) {
 		}
 		f.PeriodUsec, _ = strconv.ParseUint(max[1], 10, 64)
 	}
+	throttledPct := 0.0
+	if periods := du(stats0["nr_periods"], stats["nr_periods"]); periods > 0 {
+		throttledPct = float64(du(stats0["nr_throttled"], stats["nr_throttled"])) / float64(periods) * 100
+	}
 	return contract.Evidence{
 		ID: "ev-" + strings.ReplaceAll(in.Scope.ID, ":", "-") + "-cpu", Capability: "cgroup.cpu", Entity: in.Scope,
 		Dimension: contract.DimensionCPU, Level: contract.L2Owner, CollectedAt: in.Sample.T1.At,
@@ -115,6 +120,7 @@ func parseCPU(in spec.ParseInput) (contract.Evidence, error) {
 			{Key: "cgroup.cpu.usage_usec", Value: float64(f.UsageUsec), Unit: "usec"},
 			{Key: "cgroup.cpu.nr_throttled", Value: float64(f.NrThrottled), Unit: "count"},
 			{Key: "cgroup.cpu.throttled_usec", Value: float64(f.ThrottledUsec), Unit: "usec"},
+			{Key: "cgroup.throttled_pct", Value: throttledPct, Unit: "percent"},
 		},
 		Sources: []string{"/sys/fs/cgroup/<scope>/cpu.stat", "/sys/fs/cgroup/<scope>/cpu.max"},
 		Verify:  []string{"cat /sys/fs/cgroup/<scope>/cpu.stat", "cat /sys/fs/cgroup/<scope>/cpu.max"},
@@ -164,6 +170,10 @@ func parseIO(in spec.ParseInput) (contract.Evidence, error) {
 	}, nil
 }
 
+func du(a, b uint64) uint64 { if b >= a { return b-a }; return 0 }
+func rawAt(s source.Snapshot, k string) []byte {
+	r:=s.Reads[k]; if len(r)==0 { return nil }; return r[0].Data
+}
 func raw(s source.Snapshot, k string) []byte {
 	r := s.Reads[k]
 	if len(r) == 0 {

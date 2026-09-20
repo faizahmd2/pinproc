@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 	"strings"
@@ -41,7 +42,7 @@ func EvalAll(rs []Rule, ev []contract.Evidence) []Signal {
 
 // Default returns the V2 deterministic rule set.
 func Default() []Rule {
-	return []Rule{cpuSaturated{}, cpuPSI{}, cpuIOWait{}, cpuSteal{}, memPressure{}, memSwap{}, memOOM{}, ioSaturated{}, ioBlocked{}, fdExhausted{}, pidExhausted{}}
+	return []Rule{cpuSaturated{}, cpuPSI{}, cpuIOWait{}, cpuSteal{}, memPressure{}, memSwap{}, memOOM{}, ioSaturated{}, ioBlocked{}, fdExhausted{}, pidExhausted{}, netRetransmit{}, netListenOverflow{}, cgroupThrottled{}, fsNearlyFull{}, deletedOpenLarge{}}
 }
 
 type cpuSaturated struct{}
@@ -209,4 +210,56 @@ func mergeSupport(ev []contract.Evidence, keys ...string) []string {
 		}
 	}
 	return out
+}
+
+type netRetransmit struct{}
+func (netRetransmit) ID() string { return "net.retransmit" }
+func (netRetransmit) Eval(ev []contract.Evidence) (Signal, bool) {
+	o, ok := find(ev, "tcp.retrans_rate")
+	if !ok || o.Value <= 5 { return Signal{}, false }
+	return Signal{"net.retransmit", contract.DimensionNetwork, 2, fmt.Sprintf("TCP retransmit rate is %.1f/s", o.Value), support(ev, "tcp.retransmit"), true}, true
+}
+
+type netListenOverflow struct{}
+func (netListenOverflow) ID() string { return "net.listen_overflow" }
+func (netListenOverflow) Eval(ev []contract.Evidence) (Signal, bool) {
+	o, ok := find(ev, "tcp.listen_overflow_delta")
+	if !ok || o.Value <= 0 { return Signal{}, false }
+	return Signal{"net.listen_overflow", contract.DimensionNetwork, 3, fmt.Sprintf("%.0f connection(s) dropped — a listen backlog is full", o.Value), support(ev, "tcp.listen_overflow_delta"), true}, true
+}
+
+type cgroupThrottled struct{}
+func (cgroupThrottled) ID() string { return "cgroup.cpu_throttled" }
+func (cgroupThrottled) Eval(ev []contract.Evidence) (Signal, bool) {
+	o, ok := find(ev, "cgroup.throttled_pct")
+	if !ok || o.Value <= 5 { return Signal{}, false }
+	return Signal{"cgroup.cpu_throttled", contract.DimensionCPU, 3, fmt.Sprintf("cgroup is CPU-throttled %.1f%% of periods", o.Value), support(ev, "cgroup.throttled_pct"), true}, true
+}
+
+type fsNearlyFull struct{}
+func (fsNearlyFull) ID() string { return "fs.nearly_full" }
+func (fsNearlyFull) Eval(ev []contract.Evidence) (Signal, bool) {
+	for _, e := range ev {
+		if e.Capability != "machine.filesystem" { continue }
+		var f struct{ Mounts []struct{ Path string; UsedPct float64; InodeUsedPct float64 } }
+		b, _ := json.Marshal(e.Facts)
+		if json.Unmarshal(b, &f) != nil { continue }
+		worst := ""; pct := 0.0
+		for _, m := range f.Mounts {
+			if m.UsedPct > pct { pct = m.UsedPct; worst = m.Path }
+			if m.InodeUsedPct > pct { pct = m.InodeUsedPct; worst = m.Path }
+		}
+		if pct > 90 {
+			return Signal{"fs.nearly_full", contract.DimensionFilesystem, 3, fmt.Sprintf("%s is %.0f%% full", worst, pct), []string{e.ID}, true}, true
+		}
+	}
+	return Signal{}, false
+}
+
+type deletedOpenLarge struct{}
+func (deletedOpenLarge) ID() string { return "fs.deleted_open_large" }
+func (deletedOpenLarge) Eval(ev []contract.Evidence) (Signal, bool) {
+	o, ok := find(ev, "proc.fd_deleted_bytes")
+	if !ok || o.Value <= 500*1024*1024 { return Signal{}, false }
+	return Signal{"fs.deleted_open_large", contract.DimensionFilesystem, 3, fmt.Sprintf("process holds %.1f MB of deleted-but-open files", o.Value/(1024*1024)), support(ev, "proc.fd_deleted_bytes"), true}, true
 }
