@@ -25,7 +25,7 @@ func main() {
 	druntime.Local(logger)
 	root := &cobra.Command{Use: "diagnos", Short: "Diagnos — adaptive Linux resource investigation", Version: version}
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config path")
-	root.AddCommand(newServeCmd(), newInvestigateCmd())
+	root.AddCommand(newServeCmd(), newInvestigateCmd(), newCaptureCmd(), newReplayCmd())
 	if err := root.Execute(); err != nil {
 		var ce commandError
 		if errors.As(err, &ce) {
