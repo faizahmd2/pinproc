@@ -1,9 +1,9 @@
-# vm-native-diagnos configuration.
+# pinproc configuration.
 # The agent is local-only: it reads /proc, /sys, cgroups and related kernel state.
 # Jev is the V2 structured decision provider; rules remain the deterministic fallback.
 
 app:
-  name: vm-native-diagnos
+  name: pinproc
   log_level: info
 
 server:
@@ -12,7 +12,7 @@ server:
 service:
   user: ""
   group: ""
-  data_directory: /var/lib/vm-native-diagnos
+  data_directory: /var/lib/pinproc
 
 engine:
   budget: normal
@@ -36,4 +36,4 @@ report:
   max_findings: 5
 
 output:
-  directory: /var/lib/vm-native-diagnos/reports
+  directory: /var/lib/pinproc/reports
