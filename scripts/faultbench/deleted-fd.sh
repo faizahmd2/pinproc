@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-tmp=${DIAGNOS_FAULTBENCH_DIR:-/tmp/diagnos-faultbench}
+tmp=${DIAGNOS_FAULTBENCH_DIR:-/tmp/pinproc-faultbench}
 mkdir -p "$tmp"
-echo "Run: diagnos investigate --dimension filesystem --budget normal"
+echo "Run: pinproc investigate --dimension filesystem --budget normal"
 python3 - "$tmp" <<'PY'
 import os, sys, time
 path=os.path.join(sys.argv[1], "deleted-open")
