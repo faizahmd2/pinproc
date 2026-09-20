@@ -16,6 +16,7 @@ const (
 	ReadDirNames
 	ReadLink
 	ReadGlobLinks
+	ReadKmsg
 )
 
 // Read describes a bounded source read.
