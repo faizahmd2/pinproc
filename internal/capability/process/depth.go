@@ -146,7 +146,7 @@ func Sockets() spec.Capability {
 func MemoryMaps() spec.Capability {
 	return spec.Capability{
 		ID: "process.memory_maps", Dimension: contract.DimensionMemory, Level: contract.L4Mechanism, Kind: specKindSnapshot(),
-		Accepts: contract.EntityProcess, Cost: contract.CostHigh, Summary: "bounded /proc/<pid>/smaps region inventory", LeadsTo: nil,
+		Accepts: contract.EntityProcess, Cost: contract.CostHigh, Summary: "bounded /proc/<pid>/smaps region inventory", Requires: []string{"root_or_ptrace"}, LeadsTo: nil,
 		Reads: func(e contract.Entity, _ contract.Facts) []source.Read {
 			p := depthEntityPID(e)
 			return []source.Read{{Key: "proc.smaps", Path: "/proc/" + p + "/smaps", Kind: source.ReadFile, MaxBytes: 2 << 20, Optional: true}}
