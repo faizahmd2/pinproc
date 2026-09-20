@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability/cgroup"
+	"github.com/faizahmd2/vm-native-diagnos/internal/capability/fsx"
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability/machine"
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability/process"
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability/thread"
