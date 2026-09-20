@@ -43,7 +43,7 @@ func Attach(ctx context.Context, src source.Source, hyps []contract.Hypothesis) 
 							raw := s.Reads["kmsg"][0]
 							kmsgLines = string(raw.Data)
 							if raw.Err != nil && len(kmsgLines)==0 {
-								notices = append(notices, contract.Notice{Capability:"logs.kernel",Message:"kernel log unavailable — "+raw.Err.Error(),Count:1})
+								notices = append(notices, contract.Notice{Capability:"logs.kernel",Message:"kernel log unavailable — "+raw.Err.Error()+". Run as root to enable OOM evidence.",Count:1})
 							}
 						}
 					}
