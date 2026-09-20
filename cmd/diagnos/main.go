@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	druntime "github.com/faizahmd2/vm-native-diagnos/internal/runtime"
+	druntime "github.com/faizahmd2/pinproc/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
