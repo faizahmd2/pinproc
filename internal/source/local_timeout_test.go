@@ -1,3 +1,5 @@
+//go:build linux
+
 package source
 
 import (
@@ -18,8 +20,8 @@ func TestSnapshotBoundsBlockedOpen(t *testing.T) {
 	start := time.Now()
 	snap, err := s.Snapshot(context.Background(), []Read{{Key:"blocked", Path:fifo, Kind:ReadFile}})
 	elapsed := time.Since(start)
-	if err != nil && elapsed < 500*time.Millisecond {
-		t.Fatalf("snapshot returned unexpected error too quickly: %v", err)
+	if err == nil {
+		t.Fatalf("expected blocked read to return a timeout error")
 	}
 	if len(snap.Reads["blocked"]) != 1 {
 		t.Fatalf("expected one bounded result, got %#v", snap.Reads)
