@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/config"
-	"github.com/faizahmd2/vm-native-diagnos/internal/report"
+	"github.com/faizahmd2/pinproc/internal/config"
+	"github.com/faizahmd2/pinproc/internal/report"
 )
 
 func TestTriggerRejectsConcurrentInspection(t *testing.T) {
