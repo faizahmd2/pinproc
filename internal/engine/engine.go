@@ -780,14 +780,13 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 
 	var fs syscall.Statfs_t
 	if err := syscall.Statfs("/", &fs); err == nil {
-			bsize := uint64(fs.Bsize)
-			s.RootDiskTotalBytes = fs.Blocks * bsize
-			s.RootDiskFreeBytes = fs.Bavail * bsize
-			if s.RootDiskTotalBytes >= s.RootDiskFreeBytes {
-				s.RootDiskUsedBytes = s.RootDiskTotalBytes - s.RootDiskFreeBytes
-				if s.RootDiskTotalBytes > 0 {
-					s.RootDiskUsedPct = float64(s.RootDiskUsedBytes) / float64(s.RootDiskTotalBytes) * 100
-				}
+		bsize := uint64(fs.Bsize)
+		s.RootDiskTotalBytes = fs.Blocks * bsize
+		s.RootDiskFreeBytes = fs.Bavail * bsize
+		if s.RootDiskTotalBytes >= s.RootDiskFreeBytes {
+			s.RootDiskUsedBytes = s.RootDiskTotalBytes - s.RootDiskFreeBytes
+			if s.RootDiskTotalBytes > 0 {
+				s.RootDiskUsedPct = float64(s.RootDiskUsedBytes) / float64(s.RootDiskTotalBytes) * 100
 			}
 		}
 	}
