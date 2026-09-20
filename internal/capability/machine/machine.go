@@ -36,7 +36,7 @@ type IOFacts struct {
 }
 
 // NetworkFacts contains interface network evidence.
-type NetworkFacts struct{ RxBPS, TxBPS, RxDropRate float64 }
+type NetworkFacts struct { RxBPS, TxBPS, RxDropRate, RetransRate, ListenOverflowDelta float64 }
 
 // LimitsFacts contains global limit evidence.
 type LimitsFacts struct {
@@ -298,7 +298,21 @@ func parseNetwork(in spec.ParseInput) (contract.Evidence, error) {
 		f.TxBPS += float64(du(p.TxBytes, d.TxBytes)) / sec
 		f.RxDropRate += float64(du(p.RxDrop, d.RxDrop)) / sec
 	}
-	return ev("ev-machine-network", "machine.network", contract.DimensionNetwork, contract.L1Machine, f, []contract.Observation{o("net.rx_bps", f.RxBPS, "bytes_per_sec"), o("net.tx_bps", f.TxBPS, "bytes_per_sec"), o("net.rx_drop_rate", f.RxDropRate, "count_per_sec")}, "/proc/net/dev", "/proc/net/snmp", "/proc/net/netstat", "/proc/net/sockstat"), nil
+	snmp0, _ := procfs.ParseNetSNMP(first(in.Sample.T0, "proc.snmp"))
+	snmp1, _ := procfs.ParseNetSNMP(first(in.Sample.T1, "proc.snmp"))
+	ext0, _ := procfs.ParseNetStat(first(in.Sample.T0, "proc.netstat"))
+	ext1, _ := procfs.ParseNetStat(first(in.Sample.T1, "proc.netstat"))
+	f.RetransRate = float64(du(snmp0.RetransSegs, snmp1.RetransSegs)) / sec
+	f.ListenOverflowDelta = float64(du(ext0.ListenOverflows, ext1.ListenOverflows))
+	return ev("ev-machine-network", "machine.network", contract.DimensionNetwork, contract.L1Machine, f,
+		[]contract.Observation{
+			o("net.rx_bps", f.RxBPS, "bytes_per_sec"),
+			o("net.tx_bps", f.TxBPS, "bytes_per_sec"),
+			o("net.rx_drop_rate", f.RxDropRate, "count_per_sec"),
+			o("tcp.retrans_rate", f.RetransRate, "count_per_sec"),
+			o("tcp.listen_overflow_delta", f.ListenOverflowDelta, "count"),
+		},
+		"/proc/net/dev", "/proc/net/snmp", "/proc/net/netstat", "/proc/net/sockstat"), nil
 }
 
 func parseLimits(in spec.ParseInput) (contract.Evidence, error) {
