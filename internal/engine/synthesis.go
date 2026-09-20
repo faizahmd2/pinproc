@@ -1,10 +1,8 @@
 package engine
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 	"github.com/faizahmd2/vm-native-diagnos/internal/rules"
@@ -109,5 +107,3 @@ func signalSupport(ss []rules.Signal,id string)[]string{for _,s:=range ss{if s.I
 func entityForSupport(ev []contract.Evidence, ids []string) contract.Entity{for _,e:=range ev{for _,id:=range ids{if e.ID==id{return e.Entity}}};return contract.Entity{Kind:contract.EntityMachine,ID:"machine"}}
 func observation(e contract.Evidence,key string)(float64,bool){for _,o:=range e.Observations{if o.Key==key{return o.Value,true}};return 0,false}
 func uniqueStrings(in []string)[]string{m:=map[string]bool{};out:=[]string{};for _,x:=range in{if x!=""&&!m[x]{m[x]=true;out=append(out,x)}};return out}
-var _ = json.Marshal
-var _ = strings.TrimSpace
