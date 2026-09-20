@@ -9,6 +9,7 @@ import (
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
 	"github.com/faizahmd2/vm-native-diagnos/internal/config"
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	drules "github.com/faizahmd2/vm-native-diagnos/internal/decision/rules"
 	"github.com/faizahmd2/vm-native-diagnos/internal/engine"
 	"github.com/faizahmd2/vm-native-diagnos/internal/identity"
 	"github.com/faizahmd2/vm-native-diagnos/internal/narrator"
