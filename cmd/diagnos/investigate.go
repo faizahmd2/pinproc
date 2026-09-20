@@ -48,16 +48,7 @@ func newInvestigateCmd() *cobra.Command {
 		}
 		defer closeFn()
 		reg, err := capability.BuildBuiltin()
-		if err != nil {
-			return err
-		}
-		b, err := budget(budgetName)
-		if err != nil {
-			return err
-		}
-		if budgetName == "normal" {
-			b, _ = budget(loadedCfg.Engine.Budget)
-		}
+		if err != nil { return err }
 		dec, err := makeDecisionProvider(loadedCfg, noAI)
 		if err != nil {
 			return err
