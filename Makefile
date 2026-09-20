@@ -8,7 +8,7 @@ BINDIR ?= $(PREFIX)/bin
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o diagnos ./cmd/diagnos
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o pinproc ./cmd/diagnos
 
 test:
 	go test ./...
@@ -30,7 +30,7 @@ fmt-check:
 
 install: build
 	install -d "$(DESTDIR)$(BINDIR)"
-	install -m 0755 diagnos "$(DESTDIR)$(BINDIR)/diagnos"
+	install -m 0755 pinproc "$(DESTDIR)$(BINDIR)/pinproc"
 	install -d "$(DESTDIR)/etc/pinproc"
 	install -m 0644 app.yaml "$(DESTDIR)/etc/pinproc/app.yaml"
 
@@ -45,4 +45,4 @@ release:
 
 clean:
 	rm -rf dist
-	rm -f diagnos
+	rm -f pinproc
