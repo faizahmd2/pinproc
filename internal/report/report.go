@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
+	"github.com/faizahmd2/pinproc/internal/contract"
 )
 
 type RunningStatus struct {
@@ -100,7 +100,7 @@ func atomic(path string, b []byte) error {
 
 func RenderMarkdown(inv *contract.Investigation) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# vm-native-diagnos — %s\n\n", inv.Host)
+	fmt.Fprintf(&b, "# pinproc — %s\n\n", inv.Host)
 	if len(inv.Hypotheses) > 0 { b.WriteString(inv.Hypotheses[0].Statement) } else { b.WriteString("No material anomaly was established.") }
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "%s · %d levels · budget: %s\n", formatDuration(inv.Duration), inv.Spent.Depth, budgetName(inv))
