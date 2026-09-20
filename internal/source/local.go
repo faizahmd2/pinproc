@@ -49,6 +49,16 @@ func NewLocalWithTimeout(procRoot, sysRoot string, maxBytes int, timeout time.Du
 // Name returns the source name.
 func (s *Local) Name() string { return "local" }
 
+// StartupCheck validates the minimum host contract before an investigation begins.
+func (s *Local) StartupCheck() error {
+	f, err := os.Open(filepath.Join(s.procRoot, "stat"))
+	if err != nil { return fmt.Errorf("proc filesystem unavailable: %w", err) }
+	defer f.Close()
+	var one [1]byte
+	if _, err := f.Read(one[:]); err != nil { return fmt.Errorf("proc filesystem unreadable: %w", err) }
+	return nil
+}
+
 // Facts reads cheap host capability information.
 func (s *Local) Facts(ctx context.Context) (contract.Facts, error) {
 	b := readSmall(filepath.Join(s.procRoot, "version"), 64<<10)
