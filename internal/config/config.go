@@ -96,7 +96,7 @@ func DiscoverPath() string {
 		dir := filepath.Dir(executable)
 		candidates = append(candidates, filepath.Join(dir, "app.yaml"), filepath.Join(dir, "app.yml"))
 	}
-	candidates = append(candidates, filepath.Join("/etc", "vm-native-diagnos", "app.yaml"), filepath.Join("/etc", "vm-native-diagnos", "app.yml"))
+	candidates = append(candidates, filepath.Join("/etc", "pinproc", "app.yaml"), filepath.Join("/etc", "pinproc", "app.yml"))
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		candidates = append(candidates, filepath.Join(xdg, "diagnos", "config.yml"))
 	} else if home, err := os.UserHomeDir(); err == nil {
@@ -123,7 +123,7 @@ func defaults() Config {
 	cfg.Decision.Model = "jev-latest"
 	cfg.Decision.Timeout = 10 * time.Second
 	cfg.Narrator.Enabled = true
-	cfg.Service.DataDirectory = "/var/lib/vm-native-diagnos"
+	cfg.Service.DataDirectory = "/var/lib/pinproc"
 	cfg.Source.ReadTimeout = 2 * time.Second
 	cfg.Report.MaxFindings = 5
 	cfg.Server.Listen = "127.0.0.1:8080"
