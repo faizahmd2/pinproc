@@ -27,6 +27,15 @@ func newInvestigateCmd() *cobra.Command {
 		}
 		loadedCfg, err := config.Load(cfgPath)
 		if err != nil { return err }
+		if out == "" {
+			out, err = config.ResolveOutputDirectory(loadedCfg.Output.Directory)
+		} else {
+			out, err = config.ResolveOutputDirectory(out)
+		}
+		if err != nil { return err }
+		if err := report.EnsureWritable(out); err != nil {
+			return fmt.Errorf("output directory unavailable: %w", err)
+		}
 		src, closeFn, err := targetSource(context.Background(), host, loadedCfg.Source.ReadTimeout)
 		if err != nil {
 			return err
@@ -40,7 +49,7 @@ func newInvestigateCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if loadedCfg != nil && budgetName == "normal" {
+		if budgetName == "normal" {
 			b, _ = budget(loadedCfg.Engine.Budget)
 		}
 		dec, err := makeDecisionProvider(loadedCfg, noAI)
@@ -52,7 +61,7 @@ func newInvestigateCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if loadedCfg == nil || loadedCfg.Narrator.Enabled {
+		if loadedCfg.Narrator.Enabled {
 			if text, ne := narrator.NewRules().Narrate(context.Background(), inv); ne == nil {
 				if narrator.Validate(inv, text) == nil {
 					inv.Narrative = text
@@ -61,13 +70,6 @@ func newInvestigateCmd() *cobra.Command {
 		}
 		if !asJSON {
 			_ = report.Terminal(cmd.OutOrStdout(), inv)
-		}
-		if out == "" {
-			if loadedCfg != nil && loadedCfg.Output.Directory != "" {
-				out, _ = config.ResolveOutputDirectory(loadedCfg.Output.Directory)
-			} else {
-				out = "."
-			}
 		}
 		if err := report.Write(inv, filepath.Clean(out)); err != nil {
 			return err
