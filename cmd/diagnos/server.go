@@ -142,7 +142,7 @@ func isLoopback(r *http.Request)bool{
 func (s *nativeServer) handleReport(w http.ResponseWriter,r *http.Request){
 	if !authorized(r,s.cfg.Server.APIKey){http.Error(w,"unauthorized",http.StatusUnauthorized);return}
 	if r.Method!=http.MethodGet{http.Error(w,"method not allowed",http.StatusMethodNotAllowed);return}
-	dir,err:=report.LatestDir(s.report);if err!=nil{if os.IsNotExist(err){http.Error(w,"no report available; GET /trigger first",http.StatusNotFound);return};http.Error(w,err.Error(),http.StatusInternalServerError);return}
+	dir,err:=report.LatestDir(s.report);if err!=nil{if os.IsNotExist(err){if running,re:=report.ReadRunning(s.report);re==nil{w.Header().Set("Content-Type","application/json");w.WriteHeader(http.StatusAccepted);_ = json.NewEncoder(w).Encode(map[string]any{"id":running.ID,"status":"running"});return};http.Error(w,"no report available; GET /trigger first",http.StatusNotFound);return};http.Error(w,err.Error(),http.StatusInternalServerError);return}
 	format:=strings.ToLower(r.URL.Query().Get("format"))
 	if format=="json"{data,err:=os.ReadFile(filepath.Join(dir,"investigation.json"));if err!=nil{http.Error(w,err.Error(),http.StatusInternalServerError);return};w.Header().Set("Content-Type","application/json; charset=utf-8");_,_=w.Write(data);return}
 	data,err:=os.ReadFile(filepath.Join(dir,"report.md"));if err!=nil{http.Error(w,err.Error(),http.StatusInternalServerError);return}
