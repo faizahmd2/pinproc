@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"syscall"
 	"time"
 
 	"github.com/faizahmd2/vm-native-diagnos/internal/capability"
@@ -535,6 +536,8 @@ func machineCap(d contract.Dimension) string {
 		return "machine.network"
 	case contract.DimensionLimits:
 		return "machine.limits"
+	case contract.DimensionFilesystem:
+		return "machine.filesystem"
 	default:
 		return ""
 	}
@@ -600,6 +603,10 @@ func (e *Engine) deriveScopes(kind contract.EntityKind, parent contract.Candidat
 					}
 				}
 			}
+		case kind == contract.EntityMount && ev.Capability == "machine.filesystem":
+			b, _ := json.Marshal(ev.Facts)
+			var v struct { Mounts []struct { Path string } }
+			if json.Unmarshal(b, &v) == nil { for _, m := range v.Mounts { id := "mount:"+m.Path; if m.Path != "" && !seen[id] { seen[id] = true; out = append(out, contract.Entity{Kind:kind, ID:id, Display:m.Path}) } } }
 		case kind == contract.EntityCgroup && ev.Entity.Service != nil:
 			if path := strings.Trim(strings.TrimSpace(ev.Entity.Service.CgroupPath), "/"); path != "" {
 				id := "cgroup:" + path
