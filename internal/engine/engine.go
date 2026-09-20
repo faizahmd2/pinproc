@@ -290,11 +290,23 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 				Duration:   s.Window,
 			})
 		}
+		startNew := len(inv.Evidence)
 		inv.Evidence = append(inv.Evidence, newEv...)
 		for _, ev := range newEv {
 			registerObserved(inv, ev)
 		}
-		if e.opt.Identity != nil { _ = e.opt.Identity.ResolveAll(ctx, inv) }
+		if e.opt.Identity != nil {
+			for i := startNew; i < len(inv.Evidence); i++ {
+				ev := &inv.Evidence[i]
+				if ev.Entity.Kind != contract.EntityProcess { continue }
+				pid := strings.TrimPrefix(ev.Entity.ID, "pid:")
+				svc, ie := e.opt.Identity.Resolve(ctx, pid)
+				if ie != nil { inv.IdentityGaps++; continue }
+				ev.Entity.Display = svc.Name
+				ev.Entity.Service = &svc
+				registerObserved(inv, *ev)
+			}
+		}
 		inv.Spent.Depth = maxDepth(inv.Spent.Depth, newEv)
 		inv.Spent.Steps += len(newEv)
 		inv.Spent.Bytes += readBytes
@@ -350,7 +362,6 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	}
 	inv.NotInvestigated = mergeUnvisited(inv.NotInvestigated, front)
 	inv.Hypotheses = Synthesize(signals, inv.Evidence, e.opt.MaxFindings)
-	if e.opt.Identity != nil { _ = e.opt.Identity.ResolveAll(ctx, inv) }
 	if notices := enrich.Attach(ctx, e.opt.Source, inv.Hypotheses); len(notices) > 0 { for _, n := range notices { inv.Notices = append(inv.Notices, n) } }
 	inv.Spent.Wall = e.opt.Clock().Sub(start)
 	inv.Duration = e.opt.Clock().Sub(start)
@@ -683,7 +694,7 @@ func unavailableEvidence(cap capability.Capability, scope contract.Entity, msg s
 func addNotice(inv *contract.Investigation, capabilityID, msg string) {
 	if inv==nil || capabilityID=="" || msg=="" { return }
 	for i:=range inv.Notices {
-		if inv.Notices[i].Capability==capabilityID && inv.Notices[i].Message==msg { inv.Notices[i].Count++; return }
+		if inv.Notices[i].Capability==capabilityID { inv.Notices[i].Count++; return }
 	}
 	inv.Notices=append(inv.Notices,contract.Notice{Capability:capabilityID,Message:msg,Count:1})
 }
