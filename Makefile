@@ -37,11 +37,11 @@ install: build
 release:
 	rm -rf dist
 	mkdir -p dist
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_linux_amd64 ./cmd/diagnos
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/diagnos_$(VERSION)_linux_arm64 ./cmd/diagnos
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/vm-native-diagnos_linux_amd64 ./cmd/diagnos
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/vm-native-diagnos_linux_arm64 ./cmd/diagnos
 	cp app.yaml dist/app.yaml
-	chmod 0755 dist/diagnos_*
-	cd dist && sha256sum diagnos_* app.yaml > checksums.txt
+	chmod 0755 dist/vm-native-diagnos_linux_*
+	cd dist && sha256sum vm-native-diagnos_linux_* app.yaml > checksums.txt
 
 clean:
 	rm -rf dist
