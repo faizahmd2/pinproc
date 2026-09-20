@@ -35,8 +35,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            dist/vm-native-diagnos_linux_amd64 \
-            dist/vm-native-diagnos_linux_arm64 \
+            dist/pinproc_linux_amd64 \
+            dist/pinproc_linux_arm64 \
             dist/app.yaml \
             dist/checksums.txt \
             --title "${GITHUB_REF_NAME}" \
