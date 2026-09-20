@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
-	"github.com/faizahmd2/vm-native-diagnos/internal/source"
+	"github.com/faizahmd2/pinproc/internal/contract"
+	"github.com/faizahmd2/pinproc/internal/source"
 )
 
 func targetSource(ctx context.Context, host string, timeout ...time.Duration) (source.Source, func(), error) {
 	if !localHost(host) {
-		return nil, nil, fmt.Errorf("vm-native-diagnos is local-only; target %q is not supported", host)
+		return nil, nil, fmt.Errorf("pinproc is local-only; target %q is not supported", host)
 	}
 	readTimeout := 2 * time.Second
 	if len(timeout)>0 && timeout[0]>0 { readTimeout=timeout[0] }
