@@ -30,6 +30,7 @@ type Answer struct {
 	Confidence    float64
 	Probabilities map[string]float64
 	Legend        map[string]string
+}
 
 // Provider is the AI decision boundary.
 type Provider interface {
