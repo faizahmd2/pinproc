@@ -12,6 +12,35 @@ import (
 	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
 )
 
+type RunningStatus struct {
+	ID string `json:"id"`
+	Host string `json:"host"`
+	Trigger string `json:"trigger,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+func WriteRunning(root, id, host, trigger string) error {
+	if id == "" { return fmt.Errorf("running status id is empty") }
+	status := RunningStatus{ID:id, Host:host, Trigger:trigger, StartedAt:time.Now()}
+	b, err := json.MarshalIndent(status, "", "  ")
+	if err != nil { return err }
+	return atomic(filepath.Join(root, "running.json"), append(b, '\n'))
+}
+
+func ReadRunning(root string) (RunningStatus, error) {
+	b, err := os.ReadFile(filepath.Join(root, "running.json"))
+	if err != nil { return RunningStatus{}, err }
+	var status RunningStatus
+	if err := json.Unmarshal(b, &status); err != nil { return RunningStatus{}, err }
+	return status, nil
+}
+
+func WriteFailure(root, id, host, trigger, hint string, budget contract.Budget, reason string, stop contract.StopReason) error {
+	if stop == "" { stop = contract.StopError }
+	inv := &contract.Investigation{SchemaVersion:contract.SchemaVersion, ID:id, Host:host, Trigger:trigger, Hint:hint, StartedAt:time.Now(), Budget:budget, StopReason:stop, Limitations:[]string{"investigation failed completely: "+reason}}
+	return Write(inv, root)
+}
+
 func Write(inv *contract.Investigation, root string) error {
 	if inv == nil { return fmt.Errorf("investigation is nil") }
 	if inv.ID == "" { return fmt.Errorf("investigation id is empty") }
@@ -23,6 +52,7 @@ func Write(inv *contract.Investigation, root string) error {
 	if err := atomic(filepath.Join(dir, "investigation.json"), append(b, '\n')); err != nil { return err }
 	if err := atomic(filepath.Join(dir, "report.md"), []byte(RenderMarkdown(inv))); err != nil { return err }
 	if err := retain(root, 3); err != nil { return err }
+	_ = os.Remove(filepath.Join(root, "running.json"))
 	return atomic(filepath.Join(root, "latest.txt"), []byte(inv.ID+"\n"))
 }
 
