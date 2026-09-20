@@ -25,17 +25,13 @@ func newInvestigateCmd() *cobra.Command {
 		if len(args) > 0 {
 			host = args[0]
 		}
-		src, closeFn, loadedCfg, err := targetSource(context.Background(), host)
+		loadedCfg, err := config.Load(cfgPath)
+		if err != nil { return err }
+		src, closeFn, err := targetSource(context.Background(), host)
 		if err != nil {
 			return err
 		}
 		defer closeFn()
-		if loadedCfg == nil && cfgPath != "" {
-			loadedCfg, err = config.Load(cfgPath)
-			if err != nil {
-				return err
-			}
-		}
 		reg, err := capability.BuildBuiltin()
 		if err != nil {
 			return err
@@ -51,7 +47,7 @@ func newInvestigateCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		eng := engine.New(engine.Options{Source: src, Registry: reg, Rules: rules.Default(), Decision: dec, Identity: identity.New(src), Budget: b, Logger: logger})
+		eng := engine.New(engine.Options{Source: src, Registry: reg, Rules: rules.Default(), Decision: dec, Identity: identity.New(src), Budget: b, Logger: logger, ParallelWidth: loadedCfg.Engine.ParallelWidth, MaxFindings: loadedCfg.Report.MaxFindings, DecisionNotice: decisionNotice(loadedCfg, noAI)})
 		inv, err := eng.Run(context.Background(), engine.Request{Host: host, Trigger: trigger, Hint: hint, Dimension: contract.Dimension(dim)})
 		if err != nil {
 			return err
