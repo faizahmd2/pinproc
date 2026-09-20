@@ -278,6 +278,7 @@ func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget
 		return
 	}
 	if err := report.FinishState(s.report); err != nil {
+		_ = report.FailState(s.report, report.StatusFailed, "could not persist done state: "+err.Error())
 		logger.Error("failed to mark inspection done", "id", id, "error", err)
 		return
 	}
