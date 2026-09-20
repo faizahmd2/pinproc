@@ -71,6 +71,8 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	if req.Trigger==""{req.Trigger="http"}
 	if !s.mu.TryLock(){http.Error(w,"investigation already running",http.StatusConflict);return}
 	id:=fmt.Sprintf("inv-%d",time.Now().UnixNano())
+	if err := report.WriteRunning(s.report,id,"localhost",req.Trigger); err != nil { s.mu.Unlock(); http.Error(w,"unable to persist running state: "+err.Error(),http.StatusInternalServerError); return }
+	logger.Info("investigation accepted","id",id,"trigger",req.Trigger,"budget",req.Budget)
 	w.Header().Set("Content-Type","application/json");w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{"id":id,"status":"running","report":"/report"})
 	go s.runAsync(id,req,b)
