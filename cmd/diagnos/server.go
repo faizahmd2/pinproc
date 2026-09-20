@@ -119,12 +119,12 @@ func (s *nativeServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "vm-native-diagnos"})
+	writeHTTPJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "vm-native-diagnos"})
 }
 
 func (s *nativeServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !authorized(r, s.cfg.Server.APIKey) {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
+		writeHTTPJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -133,29 +133,29 @@ func (s *nativeServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	st, err := report.ReadState(s.report)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "error": err.Error()})
+		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "error": err.Error()})
 		return
 	}
 	code := http.StatusOK
 	if st.Status == report.StatusRunning {
 		code = http.StatusAccepted
 	}
-	writeJSON(w, code, st)
+	writeHTTPJSON(w, code, st)
 }
 
 func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	if !authorized(r, s.cfg.Server.APIKey) {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
+		writeHTTPJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
 		return
 	}
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"status": "error", "message": "only POST /trigger starts an inspection"})
+		writeHTTPJSON(w, http.StatusMethodNotAllowed, map[string]any{"status": "error", "message": "only POST /trigger starts an inspection"})
 		return
 	}
 
 	req, err := parseTriggerRequest(w, r)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"status": "error", "message": err.Error()})
+		writeHTTPJSON(w, http.StatusBadRequest, map[string]any{"status": "error", "message": err.Error()})
 		return
 	}
 	if req.Budget == "" {
@@ -166,7 +166,7 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := budget(req.Budget)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"status": "error", "message": err.Error()})
+		writeHTTPJSON(w, http.StatusBadRequest, map[string]any{"status": "error", "message": err.Error()})
 		return
 	}
 	if req.Trigger == "" {
@@ -175,7 +175,7 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 
 	if !s.mu.TryLock() {
 		st, _ := report.ReadState(s.report)
-		writeJSON(w, http.StatusConflict, map[string]any{
+		writeHTTPJSON(w, http.StatusConflict, map[string]any{
 			"status":  "running",
 			"id":      st.ID,
 			"message": "inspection already happening; wait for it to finish",
@@ -186,12 +186,12 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	id := fmt.Sprintf("inv-%d", time.Now().UnixNano())
 	if err := report.StartState(s.report, id, "localhost", req.Trigger); err != nil {
 		s.mu.Unlock()
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": "unable to persist inspection state: " + err.Error()})
+		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": "unable to persist inspection state: " + err.Error()})
 		return
 	}
 
 	logger.Info("inspection accepted", "id", id, "trigger", req.Trigger, "budget", req.Budget)
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	writeHTTPJSON(w, http.StatusAccepted, map[string]any{
 		"id": id, "status": "running", "status_url": "/status", "report_url": "/report",
 	})
 	go s.runAsync(id, req, b)
@@ -326,7 +326,7 @@ func isLoopback(r *http.Request) bool {
 
 func (s *nativeServer) handleReport(w http.ResponseWriter, r *http.Request) {
 	if !authorized(r, s.cfg.Server.APIKey) {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
+		writeHTTPJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -335,23 +335,23 @@ func (s *nativeServer) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	st, _ := report.ReadState(s.report)
 	if st.Status == report.StatusRunning {
-		writeJSON(w, http.StatusAccepted, st)
+		writeHTTPJSON(w, http.StatusAccepted, st)
 		return
 	}
 	dir, err := report.LatestDir(s.report)
 	if err != nil {
 		if os.IsNotExist(err) {
-			writeJSON(w, http.StatusNotFound, map[string]any{"status": "not_found", "message": "no completed inspection report available; POST /trigger first"})
+			writeHTTPJSON(w, http.StatusNotFound, map[string]any{"status": "not_found", "message": "no completed inspection report available; POST /trigger first"})
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
+		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
 		return
 	}
 	format := strings.ToLower(r.URL.Query().Get("format"))
 	if format == "json" {
 		data, err := os.ReadFile(filepath.Join(dir, "investigation.json"))
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
+			writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -361,7 +361,7 @@ func (s *nativeServer) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "report.md"))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
+		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -369,7 +369,7 @@ func (s *nativeServer) handleReport(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
+func writeHTTPJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
