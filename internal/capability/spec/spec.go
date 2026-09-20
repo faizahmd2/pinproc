@@ -1,8 +1,8 @@
 package spec
 
 import (
-	"github.com/faizahmd2/vm-native-diagnos/internal/contract"
-	"github.com/faizahmd2/vm-native-diagnos/internal/source"
+	"github.com/faizahmd2/pinproc/internal/contract"
+	"github.com/faizahmd2/pinproc/internal/source"
 	"time"
 )
 
