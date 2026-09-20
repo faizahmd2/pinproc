@@ -9,6 +9,11 @@ app:
 server:
   listen: 127.0.0.1:8080
 
+service:
+  user: ""
+  group: ""
+  data_directory: /var/lib/vm-native-diagnos
+
 engine:
   budget: normal
   sample_window: 1s
@@ -31,4 +36,4 @@ report:
   max_findings: 5
 
 output:
-  directory: ~/diagnos/reports
+  directory: /var/lib/vm-native-diagnos/reports
