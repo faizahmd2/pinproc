@@ -80,6 +80,23 @@ func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 
 func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget) {
 	defer s.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	logger.Info("investigation running", "id", id)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				logger.Info("investigation still running", "id", id)
+			case <-done:
+				return
+			}
+		}
+	}()
 	defer func(){if r:=recover();r!=nil{
 		inv:=&contract.Investigation{SchemaVersion:contract.SchemaVersion,ID:id,Host:"localhost",Trigger:req.Trigger,Hint:req.Hint,StartedAt:time.Now(),Budget:b,StopReason:contract.StopError}
 		inv.Limitations=append(inv.Limitations,fmt.Sprintf("investigation panic: %v",r))
@@ -90,8 +107,8 @@ func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget
 	reg,err:=capability.BuildBuiltin();if err!=nil{_ = s.writeEngineError(id,req,b,err);return}
 	dec,err:=makeDecisionProvider(s.cfg,req.NoAI);if err!=nil{_ = s.writeEngineError(id,req,b,err);return}
 	eng:=engine.New(engine.Options{Source:src,Registry:reg,Rules:rules.Default(),Decision:dec,Identity:identity.New(src),Budget:b,ParallelWidth:s.cfg.Engine.ParallelWidth,MaxFindings:s.cfg.Report.MaxFindings,DecisionNotice:decisionNotice(s.cfg,req.NoAI),Logger:logger})
-	inv,err:=eng.Run(context.Background(),engine.Request{ID:id,Host:"localhost",Trigger:req.Trigger,Hint:req.Hint,Dimension:req.Dimension})
-	if err!=nil{_ = s.writeEngineError(id,req,b,err);return}
+	inv,err:=eng.Run(ctx,engine.Request{ID:id,Host:"localhost",Trigger:req.Trigger,Hint:req.Hint,Dimension:req.Dimension})
+	if err!=nil{_ = s.writeEngineError(id,req,b,err); logger.Error("investigation failed","id",id,"error",err); return}
 	if s.cfg.Narrator.Enabled{if text,ne:=narrator.NewRules().Narrate(context.Background(),inv);ne==nil&&narrator.Validate(inv,text)==nil{inv.Narrative=text}}
 	if err:=report.Write(inv,s.report);err!=nil{logger.Error("write report failed","id",id,"error",err)}
 }
