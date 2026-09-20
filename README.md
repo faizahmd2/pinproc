@@ -1,145 +1,320 @@
 # vm-native-diagnos
 
-`vm-native-diagnos` is a tiny, read-only Linux machine investigation agent.
+vm-native-diagnos is a small, read-only Linux machine inspection service.
 
-It is the V2 investigation engine moved into its own repository. The agent runs **on the machine being investigated** and reads `/proc`, `/sys`, cgroups, process/thread state, sockets, limits and other read-only OS interfaces directly.
+It runs continuously as a system service, survives reboots, and performs an inspection only when POST /trigger is called. At most one inspection can run at a time. Every inspection has a durable lifecycle state:
 
-There is no SSH transport, no eBPF, no Prometheus, no node_exporter and no historical telemetry dependency.
+    idle -> running -> done
 
-## Runtime flow
+or:
 
-```text
-HTTP POST /trigger
-       │
-       ▼
-local /proc + /sys + cgroups
-       │
-       ▼
-bounded V2 adaptive investigation
-       │
-       ├── deterministic rules
-       ├── registered capabilities
-       └── Jev AI decisions when deeper investigation is warranted
-       │
-       ▼
-investigation.json + report.md
-       │
-       ▼
-HTTP GET /report
-```
+    running -> failed / interrupted
 
-Short sampling windows are only used to calculate realtime counter deltas such as CPU and I/O rates. Nothing is queried from historical telemetry.
+The service reads local Linux interfaces such as /proc, /sys, cgroups, process/thread state, sockets, limits and related kernel state. It does not use SSH, eBPF, Prometheus, node_exporter or historical telemetry.
 
-## HTTP API
+## Supported release targets
 
-The binary starts the server when invoked without a subcommand.
+Production releases are Linux only:
 
-### Trigger
+- x86_64 / amd64
+- arm64 / aarch64
 
-```http
-POST /trigger
-Content-Type: application/json
+macOS/Darwin is intentionally not released.
 
-{
-  "hint": "request latency increased",
-  "dimension": "cpu",
-  "budget": "normal",
-  "trigger": "incident"
-}
-```
+## Install from the latest GitHub release
 
-The investigation runs locally and the latest report is persisted. The response contains the investigation ID and points to `/report`.
+The normal deployment path is a Linux VM with systemd.
 
-### Report
+### 1. Download the binary and default config
 
-```http
-GET /report
-```
+Copy and paste:
 
-Returns the latest completed investigation. While an investigation is running, `/report` returns `202 Accepted` with its current ID and status. If an investigation fails completely, the failure report is still persisted with the reason.
+    set -e
 
-Default listen address:
+    ARCH="$(uname -m)"
+    case "$ARCH" in
+      x86_64) ASSET="vm-native-diagnos_linux_amd64" ;;
+      aarch64|arm64) ASSET="vm-native-diagnos_linux_arm64" ;;
+      *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
 
-```text
-127.0.0.1:8080
-```
+    sudo install -d -m 0755 /etc/vm-native-diagnos
+    sudo curl -fL       "https://github.com/faizahmd2/vm-native-diagnos/releases/latest/download/$ASSET"       -o /usr/local/bin/vm-native-diagnos
+    sudo chmod 0755 /usr/local/bin/vm-native-diagnos
 
-Configure it in `app.yaml`:
+    sudo curl -fL       "https://github.com/faizahmd2/vm-native-diagnos/releases/latest/download/app.yaml"       -o /etc/vm-native-diagnos/app.yaml
 
-```yaml
-server:
-  listen: :8080
-```
+The release workflow publishes these Linux assets from version tags. GitHub supports automated release management and release assets. citeturn472478search0turn472478search2
 
-The default localhost binding is intentional because `/trigger` is an operational endpoint.
+### 2. Put the AI key in app.yaml
 
-## AI
+Edit:
 
-AI decision-making is enabled by default through the bounded `decision.Provider` interface.
+    sudo vi /etc/vm-native-diagnos/app.yaml
 
-```yaml
-decision:
-  provider: jev
-  base_url: https://api.typesafe.ai
-  model: jev-latest
-  timeout: 10s
-```
+Set:
 
-Put the AI key in the tracked `app.yaml`:
+    decision:
+      provider: jev
+      api_key: "<replace-with-ai-key>"
+      base_url: https://api.typesafe.ai
+      model: jev-latest
+      timeout: 10s
 
-```yaml
-decision:
-  provider: jev
-  api_key: "<replace-with-ai-key>"
-```
+Replace only the placeholder with the real key.
 
-The default config discovery checks the current directory first, so running `./diagnos ...` from the project or release directory automatically uses `app.yaml`. An unchanged placeholder is treated as AI not configured and the deterministic rules are used with a visible report notice. Environment variables remain optional overrides; they are not required for normal setup.
+No environment variable is required. Environment variables remain optional overrides.
 
-If the AI service is unavailable, the investigation falls back to deterministic rule decisions rather than failing the machine analysis.
+The default service settings are:
 
-## Reports
+    service:
+      user: ""
+      group: ""
+      data_directory: /var/lib/vm-native-diagnos
 
-Reports are written to:
+    output:
+      directory: /var/lib/vm-native-diagnos/reports
 
-```text
-~/diagnos/reports/
-├── investigation.json
-└── report.md
-```
+When service.user is empty, installation uses the user who invoked sudo, for example ubuntu. When service.user is set to diagnos, the installer creates that dedicated service account when it does not already exist.
 
-The JSON document is the stable machine-readable contract. The Markdown document is the human-readable report.
+### 3. Install and start the service
 
-## Build
+Run:
 
-```sh
-make build
-sudo make install
-```
+    sudo /usr/local/bin/vm-native-diagnos --config /etc/vm-native-diagnos/app.yaml service install
 
-Run explicitly:
+This command:
 
-```sh
-vm-native-diagnos serve
-```
+- creates the configured service user if necessary
+- creates the service data/report directory
+- installs the systemd unit
+- enables it for boot
+- starts it immediately
 
-Or simply:
+Systemd brings enabled services back during normal boot through the configured boot target. citeturn472478search9
 
-```sh
-vm-native-diagnos
-```
+Check it:
 
-The latter starts the server using the default configuration.
+    sudo systemctl status vm-native-diagnos
 
-## Design constraints
+Follow logs:
 
-- read-only OS investigation
-- local machine only
-- no SSH or remote command execution
-- no eBPF
-- no Prometheus/node_exporter
-- no historical telemetry window queries
-- bounded capability descent
-- model may choose only registered capabilities
-- PID/TID/cgroup scopes must be observed before deeper collection
-- bounded bytes, depth, steps, wall time and AI calls
-- atomic report writes
+    sudo journalctl -u vm-native-diagnos -f
+
+Check service health:
+
+    curl -sS http://127.0.0.1:8080/healthz | jq .
+
+## Linux service security
+
+The service is designed to run as an unprivileged account instead of running the inspection binary as root.
+
+The generated systemd unit restricts the service to these capabilities:
+
+    CAP_DAC_READ_SEARCH
+    CAP_SYS_PTRACE
+    CAP_SYSLOG
+
+The unit also uses systemd filesystem and namespace restrictions and writes persistent state only below /var/lib/vm-native-diagnos.
+
+### Use the current user
+
+For the simplest setup, keep:
+
+    service:
+      user: ""
+      group: ""
+
+Then install with:
+
+    sudo /usr/local/bin/vm-native-diagnos --config /etc/vm-native-diagnos/app.yaml service install
+
+The service runs as the invoking account rather than as root.
+
+### Use a dedicated diagnos account
+
+For a dedicated account, set:
+
+    service:
+      user: diagnos
+      group: diagnos
+
+Then run the same install command.
+
+The installer creates the Linux system account if it is missing and assigns it a non-login shell.
+
+This is the recommended deployment shape when you want the inspection isolated from the normal login account.
+
+## Trigger an inspection
+
+There is one production inspection entry point:
+
+    POST /trigger
+
+Example:
+
+    curl -sS -X POST http://127.0.0.1:8080/trigger       -H 'Content-Type: application/json'       -d '{
+        "hint": "request latency increased",
+        "dimension": "cpu",
+        "budget": "normal",
+        "trigger": "incident"
+      }' | jq .
+
+AI is used by default when the configured provider has a real key.
+
+For a deterministic test run, explicitly add this field to the request:
+
+    "no_ai": true
+
+### One inspection at a time
+
+If an inspection is already running, additional trigger requests do not start another one.
+
+They receive HTTP 409 Conflict with the active inspection ID:
+
+    {
+      "status": "running",
+      "id": "inv-...",
+      "message": "inspection already happening; wait for it to finish"
+    }
+
+Ten simultaneous callers therefore result in one active inspection and nine rejected trigger attempts.
+
+When the active inspection reaches a terminal state, the next trigger can start a new inspection.
+
+## Inspect progress
+
+Use:
+
+    curl -i -sS http://127.0.0.1:8080/status | jq .
+
+Typical running state:
+
+    {
+      "status": "running",
+      "id": "inv-...",
+      "stage": "deep_investigation"
+    }
+
+Typical completed state:
+
+    {
+      "status": "done",
+      "id": "inv-...",
+      "stage": "done"
+    }
+
+The state file is persistent:
+
+    /var/lib/vm-native-diagnos/reports/state.json
+
+If the machine or service is restarted while an inspection is running, the next service startup marks that inspection as interrupted instead of leaving an indefinitely running state behind.
+
+## Get the completed report
+
+While an inspection is running:
+
+    curl -i http://127.0.0.1:8080/report?format=json
+
+returns HTTP 202 Accepted and the current state.
+
+After completion:
+
+    curl -sS http://127.0.0.1:8080/report?format=json | jq .
+
+For the human-readable report:
+
+    curl -sS http://127.0.0.1:8080/report
+
+Reports are retained in the configured report directory, with the latest completed investigation referenced by:
+
+    /var/lib/vm-native-diagnos/reports/latest.txt
+
+## Failure behavior
+
+The service is intentionally fail-visible.
+
+If an inspection fails completely, the service writes an investigation report and marks its durable state as failed.
+
+A failure is never represented by "nothing happened".
+
+The journal also contains lifecycle messages including:
+
+    inspection accepted
+    inspection progress
+    inspection done
+    inspection failed
+    inspection panic
+
+Follow them with:
+
+    sudo journalctl -u vm-native-diagnos -f
+
+## Reboot test
+
+After installation:
+
+    sudo systemctl is-enabled vm-native-diagnos
+    sudo systemctl is-active vm-native-diagnos
+
+Then reboot:
+
+    sudo reboot
+
+After reconnecting:
+
+    sudo systemctl is-active vm-native-diagnos
+    curl -sS http://127.0.0.1:8080/healthz | jq .
+
+The service should be running again without manually launching the binary.
+
+## Update to a new release
+
+Download the new release binary over the installed path, then restart:
+
+    ARCH="$(uname -m)"
+    case "$ARCH" in
+      x86_64) ASSET="vm-native-diagnos_linux_amd64" ;;
+      aarch64|arm64) ASSET="vm-native-diagnos_linux_arm64" ;;
+      *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+
+    sudo curl -fL       "https://github.com/faizahmd2/vm-native-diagnos/releases/latest/download/$ASSET"       -o /usr/local/bin/vm-native-diagnos
+    sudo chmod 0755 /usr/local/bin/vm-native-diagnos
+    sudo systemctl restart vm-native-diagnos
+
+Your existing /etc/vm-native-diagnos/app.yaml and report data remain in place.
+
+## Remove the service
+
+    sudo /usr/local/bin/vm-native-diagnos service uninstall
+
+This removes the systemd service but deliberately preserves the configuration and reports.
+
+## Developer commands
+
+The deployed service uses service run and starts inspections only through POST /trigger.
+
+The repository also contains developer-oriented one-shot commands:
+
+    ./diagnos investigate localhost --no-ai --budget fast
+    ./diagnos capture localhost --no-ai --budget fast --out ./captures
+    ./diagnos replay ./captures/<inspection> --budget fast --out ./replay-output
+
+These are useful for local debugging and fixture creation; they are not the production service integration path.
+
+## Build and test
+
+    make test
+    make vet
+    make build
+    make release
+
+make release produces only:
+
+    dist/vm-native-diagnos_linux_amd64
+    dist/vm-native-diagnos_linux_arm64
+    dist/app.yaml
+    dist/checksums.txt
+
+The service is intentionally Linux-only because its collection layer uses Linux /proc, /sys and cgroup interfaces.
