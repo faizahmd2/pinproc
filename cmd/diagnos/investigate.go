@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 	"github.com/faizahmd2/pinproc/internal/capability"
 	"github.com/faizahmd2/pinproc/internal/config"
 	"github.com/faizahmd2/pinproc/internal/contract"
@@ -15,6 +14,7 @@ import (
 	"github.com/faizahmd2/pinproc/internal/rules"
 	"github.com/spf13/cobra"
 	"path/filepath"
+	"time"
 )
 
 // newInvestigateCmd runs a bounded investigation.
@@ -27,19 +27,27 @@ func newInvestigateCmd() *cobra.Command {
 			host = args[0]
 		}
 		loadedCfg, err := config.Load(cfgPath)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		if out == "" {
 			out, err = config.ResolveOutputDirectory(loadedCfg.Output.Directory)
 		} else {
 			out, err = config.ResolveOutputDirectory(out)
 		}
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		if err := report.EnsureWritable(out); err != nil {
 			return fmt.Errorf("output directory unavailable: %w", err)
 		}
 		b, err := budget(budgetName)
-		if err != nil { return err }
-		if budgetName == "normal" { b, _ = budget(loadedCfg.Engine.Budget) }
+		if err != nil {
+			return err
+		}
+		if budgetName == "normal" {
+			b, _ = budget(loadedCfg.Engine.Budget)
+		}
 		invID := fmt.Sprintf("inv-%d", time.Now().UnixNano())
 		src, closeFn, err := targetSource(context.Background(), host, loadedCfg.Source.ReadTimeout)
 		if err != nil {
@@ -48,7 +56,9 @@ func newInvestigateCmd() *cobra.Command {
 		}
 		defer closeFn()
 		reg, err := capability.BuildBuiltin()
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		dec, err := makeDecisionProvider(loadedCfg, noAI)
 		if err != nil {
 			return err

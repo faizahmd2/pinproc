@@ -16,9 +16,14 @@ func targetSource(ctx context.Context, host string, timeout ...time.Duration) (s
 		return nil, nil, fmt.Errorf("pinproc is local-only; target %q is not supported", host)
 	}
 	readTimeout := 2 * time.Second
-	if len(timeout)>0 && timeout[0]>0 { readTimeout=timeout[0] }
+	if len(timeout) > 0 && timeout[0] > 0 {
+		readTimeout = timeout[0]
+	}
 	s := source.NewLocalWithTimeout("/proc", "/sys", 8<<20, readTimeout)
-	if err := s.StartupCheck(); err != nil { _ = s.Close(); return nil, nil, err }
+	if err := s.StartupCheck(); err != nil {
+		_ = s.Close()
+		return nil, nil, err
+	}
 	return s, func() { _ = s.Close() }, nil
 }
 

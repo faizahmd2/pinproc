@@ -162,29 +162,29 @@ type Evidence struct {
 
 // Hypothesis is a claim whose evidentiary grade is explicit.
 type Hypothesis struct {
-	ID          string    `json:"id"`
-	Statement   string    `json:"statement"`
-	Dimension   Dimension `json:"dimension"`
-	Entity      Entity    `json:"entity"`
-	Grade       Grade     `json:"grade"`
-	Support     []string  `json:"support"`
-	Contradicts []string  `json:"contradicts,omitempty"`
-	Confidence  float64   `json:"confidence"`
+	ID          string      `json:"id"`
+	Statement   string      `json:"statement"`
+	Dimension   Dimension   `json:"dimension"`
+	Entity      Entity      `json:"entity"`
+	Grade       Grade       `json:"grade"`
+	Support     []string    `json:"support"`
+	Contradicts []string    `json:"contradicts,omitempty"`
+	Confidence  float64     `json:"confidence"`
 	Source      string      `json:"source"`
 	LogContext  *LogContext `json:"log_context,omitempty"`
 }
 
 type LogContext struct {
-	Path string `json:"path"`
-	Line string `json:"line"`
-	Count int `json:"count,omitempty"`
+	Path     string    `json:"path"`
+	Line     string    `json:"line"`
+	Count    int       `json:"count,omitempty"`
 	LastSeen time.Time `json:"last_seen,omitempty"`
 }
 
 type Notice struct {
 	Capability string `json:"capability"`
-	Message string `json:"message"`
-	Count int `json:"count,omitempty"`
+	Message    string `json:"message"`
+	Count      int    `json:"count,omitempty"`
 }
 
 // Candidate is one legal next investigation.

@@ -16,7 +16,9 @@ func makeDecisionProvider(cfg *config.Config, noAI bool) (decision.Provider, err
 	switch cfg.Decision.Provider {
 	case "jev":
 		key := cfg.Decision.APIKey
-		if key == "" { return drules.New(), nil }
+		if key == "" {
+			return drules.New(), nil
+		}
 		return jev.New(cfg.Decision.BaseURL, cfg.Decision.Model, key, cfg.Decision.Timeout), nil
 	default:
 		return nil, fmt.Errorf("decision provider %q is not available in this milestone", cfg.Decision.Provider)
@@ -24,7 +26,11 @@ func makeDecisionProvider(cfg *config.Config, noAI bool) (decision.Provider, err
 }
 
 func decisionNotice(cfg *config.Config, noAI bool) string {
-	if noAI || cfg == nil || cfg.Decision.Provider != "jev" { return "" }
-	if cfg.Decision.APIKey == "" { return "AI decision provider unavailable — decision.api_key is not configured in app.yaml. Using deterministic rules." }
+	if noAI || cfg == nil || cfg.Decision.Provider != "jev" {
+		return ""
+	}
+	if cfg.Decision.APIKey == "" {
+		return "AI decision provider unavailable — decision.api_key is not configured in app.yaml. Using deterministic rules."
+	}
 	return ""
 }

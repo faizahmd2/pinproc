@@ -170,9 +170,18 @@ func parseIO(in spec.ParseInput) (contract.Evidence, error) {
 	}, nil
 }
 
-func du(a, b uint64) uint64 { if b >= a { return b-a }; return 0 }
+func du(a, b uint64) uint64 {
+	if b >= a {
+		return b - a
+	}
+	return 0
+}
 func rawAt(s source.Snapshot, k string) []byte {
-	r:=s.Reads[k]; if len(r)==0 { return nil }; return r[0].Data
+	r := s.Reads[k]
+	if len(r) == 0 {
+		return nil
+	}
+	return r[0].Data
 }
 func raw(s source.Snapshot, k string) []byte {
 	r := s.Reads[k]

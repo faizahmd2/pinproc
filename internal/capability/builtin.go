@@ -26,17 +26,17 @@ func BuildBuiltin() (*Registry, error) {
 		}
 	}
 	edges := map[string][]string{
-		"machine.cpu":       {"machine.processes", "machine.io"},
-		"machine.memory":    {"machine.processes"},
-		"machine.io":        {"machine.processes"},
-		"machine.network":   {"machine.processes"},
-		"machine.limits":    {"machine.processes"},
+		"machine.cpu":        {"machine.processes", "machine.io"},
+		"machine.memory":     {"machine.processes"},
+		"machine.io":         {"machine.processes"},
+		"machine.network":    {"machine.processes"},
+		"machine.limits":     {"machine.processes"},
 		"machine.filesystem": {"fs.usage"},
-		"machine.processes": {"process.cpu", "process.memory", "process.io"},
-		"process.cpu":       {"thread.cpu", "thread.scheduler", "thread.wait", "cgroup.cpu"},
-		"process.memory":    {"process.memory_maps", "cgroup.memory"},
-		"process.io":        {"process.files", "process.limits", "cgroup.io"},
-		"process.files":     {"process.sockets"},
+		"machine.processes":  {"process.cpu", "process.memory", "process.io"},
+		"process.cpu":        {"thread.cpu", "thread.scheduler", "thread.wait", "cgroup.cpu"},
+		"process.memory":     {"process.memory_maps", "cgroup.memory"},
+		"process.io":         {"process.files", "process.limits", "cgroup.io"},
+		"process.files":      {"process.sockets"},
 	}
 	for id, leadsTo := range edges {
 		c, ok := r.Get(id)

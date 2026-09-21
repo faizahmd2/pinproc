@@ -14,6 +14,8 @@ func TestRenderServiceUnit(t *testing.T) {
 		"Restart=on-failure",
 		"WantedBy=multi-user.target",
 	} {
-		if !strings.Contains(unit, want) { t.Fatalf("service unit missing %q:\n%s", want, unit) }
+		if !strings.Contains(unit, want) {
+			t.Fatalf("service unit missing %q:\n%s", want, unit)
+		}
 	}
 }

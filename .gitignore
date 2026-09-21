@@ -1,5 +1,5 @@
 # Local binaries and release output
-diagnos
+pinproc
 dist/
 
 # Runtime investigation evidence

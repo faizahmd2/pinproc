@@ -25,18 +25,18 @@ import (
 
 // Options configures the bounded investigation engine.
 type Options struct {
-	Source        source.Source
-	Registry      *capability.Registry
-	Rules         []rules.Rule
-	Decision      decision.Provider
-	Identity      *identity.Resolver
-	Budget        contract.Budget
-	Clock         func() time.Time
-	Logger        *slog.Logger
-	ParallelWidth int
-	MaxFindings   int
+	Source         source.Source
+	Registry       *capability.Registry
+	Rules          []rules.Rule
+	Decision       decision.Provider
+	Identity       *identity.Resolver
+	Budget         contract.Budget
+	Clock          func() time.Time
+	Logger         *slog.Logger
+	ParallelWidth  int
+	MaxFindings    int
 	DecisionNotice string
-	Progress      func(string)
+	Progress       func(string)
 }
 
 // Request starts one investigation.
@@ -71,14 +71,18 @@ func New(o Options) *Engine {
 	if o.ParallelWidth > 3 {
 		o.ParallelWidth = 3
 	}
-	if o.MaxFindings < 1 { o.MaxFindings = 5 }
+	if o.MaxFindings < 1 {
+		o.MaxFindings = 5
+	}
 	return &Engine{opt: o}
 }
 
 // Run executes the complete bounded descent.
 func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation, error) {
 	wall := e.opt.Budget.MaxWall
-	if wall <= 0 || wall > absoluteMaxWall { wall = absoluteMaxWall }
+	if wall <= 0 || wall > absoluteMaxWall {
+		wall = absoluteMaxWall
+	}
 	ctx, cancel := context.WithTimeout(ctx, wall)
 	defer cancel()
 	if e.opt.Source == nil || e.opt.Registry == nil || e.opt.Decision == nil {
@@ -105,8 +109,12 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		Hypotheses:    []contract.Hypothesis{},
 		Path:          []contract.Step{},
 	}
-	if inv.ID == "" { inv.ID = fmt.Sprintf("inv-%d", start.UnixNano()) }
-	if e.opt.DecisionNotice != "" { addNotice(inv, "decision", e.opt.DecisionNotice) }
+	if inv.ID == "" {
+		inv.ID = fmt.Sprintf("inv-%d", start.UnixNano())
+	}
+	if e.opt.DecisionNotice != "" {
+		addNotice(inv, "decision", e.opt.DecisionNotice)
+	}
 	if e.opt.Identity != nil {
 		if machine, ie := e.opt.Identity.ResolveMachine(ctx); ie == nil {
 			inv.Machine = machine
@@ -280,7 +288,12 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 			})
 			if pe != nil {
 				class := "error"
-				if strings.HasPrefix(pe.Error(), "panic:") { class = "panic"; addNotice(inv, cap.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(cap.ID)) } else { addNotice(inv, cap.ID, "capability failed — "+truncate(pe.Error(), 150)) }
+				if strings.HasPrefix(pe.Error(), "panic:") {
+					class = "panic"
+					addNotice(inv, cap.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(cap.ID))
+				} else {
+					addNotice(inv, cap.ID, "capability failed — "+truncate(pe.Error(), 150))
+				}
 				newEv = append(newEv, failureEvidence(cap, c.Scope, class, pe.Error()))
 				inv.Path = append(inv.Path, contract.Step{
 					Depth:      cap.Level,
@@ -311,10 +324,15 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		if e.opt.Identity != nil {
 			for i := startNew; i < len(inv.Evidence); i++ {
 				ev := &inv.Evidence[i]
-				if ev.Entity.Kind != contract.EntityProcess { continue }
+				if ev.Entity.Kind != contract.EntityProcess {
+					continue
+				}
 				pid := strings.TrimPrefix(ev.Entity.ID, "pid:")
 				svc, ie := e.opt.Identity.Resolve(ctx, pid)
-				if ie != nil { inv.IdentityGaps++; continue }
+				if ie != nil {
+					inv.IdentityGaps++
+					continue
+				}
 				ev.Entity.Display = svc.Name
 				ev.Entity.Service = &svc
 				registerObserved(inv, *ev)
@@ -376,7 +394,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	inv.NotInvestigated = mergeUnvisited(inv.NotInvestigated, front)
 	e.progress("reporting")
 	inv.Hypotheses = Synthesize(signals, inv.Evidence, e.opt.MaxFindings)
-	if notices := enrich.Attach(ctx, e.opt.Source, inv.Hypotheses); len(notices) > 0 { for _, n := range notices { inv.Notices = append(inv.Notices, n) } }
+	if notices := enrich.Attach(ctx, e.opt.Source, inv.Hypotheses); len(notices) > 0 {
+		for _, n := range notices {
+			inv.Notices = append(inv.Notices, n)
+		}
+	}
 	inv.Spent.Wall = e.opt.Clock().Sub(start)
 	inv.Duration = e.opt.Clock().Sub(start)
 	return inv, nil
@@ -409,7 +431,11 @@ func (e *Engine) sweep(ctx context.Context, inv *contract.Investigation) ([]cont
 		})
 		if pe != nil {
 			e.opt.Logger.Warn("capability parse failed", "capability", c.ID, "error", pe)
-			if strings.HasPrefix(pe.Error(), "panic:") { addNotice(inv, c.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(c.ID)) } else { addNotice(inv, c.ID, "capability failed — "+truncate(pe.Error(), 150)) }
+			if strings.HasPrefix(pe.Error(), "panic:") {
+				addNotice(inv, c.ID, "capability hit an internal error (bug, not your system) — please report this with code "+panicCode(c.ID))
+			} else {
+				addNotice(inv, c.ID, "capability failed — "+truncate(pe.Error(), 150))
+			}
 			out = append(out, failureEvidence(c, contract.Entity{Kind: contract.EntityMachine, ID: "machine"}, "error", pe.Error()))
 			continue
 		}
@@ -423,10 +449,14 @@ func (e *Engine) sweep(ctx context.Context, inv *contract.Investigation) ([]cont
 }
 
 func registerObserved(inv *contract.Investigation, ev contract.Evidence) {
-	if inv == nil || ev.Entity.ID == "" { return }
+	if inv == nil || ev.Entity.ID == "" {
+		return
+	}
 	register := func(entity contract.Entity) {
 		for _, x := range inv.ObservedEntities {
-			if x.Kind == entity.Kind && x.ID == entity.ID && x.ParentID == entity.ParentID { return }
+			if x.Kind == entity.Kind && x.ID == entity.ID && x.ParentID == entity.ParentID {
+				return
+			}
 		}
 		inv.ObservedEntities = append(inv.ObservedEntities, entity)
 	}
@@ -434,7 +464,11 @@ func registerObserved(inv *contract.Investigation, ev contract.Evidence) {
 		b, _ := json.Marshal(ev.Facts)
 		var f struct{ Mounts []struct{ Path string } }
 		if json.Unmarshal(b, &f) == nil {
-			for _, m := range f.Mounts { if m.Path != "" { register(contract.Entity{Kind:contract.EntityMount, ID:"mount:"+m.Path, Display:m.Path}) } }
+			for _, m := range f.Mounts {
+				if m.Path != "" {
+					register(contract.Entity{Kind: contract.EntityMount, ID: "mount:" + m.Path, Display: m.Path})
+				}
+			}
 		}
 	}
 	register(ev.Entity)
@@ -645,8 +679,16 @@ func (e *Engine) deriveScopes(kind contract.EntityKind, parent contract.Candidat
 			}
 		case kind == contract.EntityMount && ev.Capability == "machine.filesystem":
 			b, _ := json.Marshal(ev.Facts)
-			var v struct { Mounts []struct { Path string } }
-			if json.Unmarshal(b, &v) == nil { for _, m := range v.Mounts { id := "mount:"+m.Path; if m.Path != "" && !seen[id] { seen[id] = true; out = append(out, contract.Entity{Kind:kind, ID:id, Display:m.Path}) } } }
+			var v struct{ Mounts []struct{ Path string } }
+			if json.Unmarshal(b, &v) == nil {
+				for _, m := range v.Mounts {
+					id := "mount:" + m.Path
+					if m.Path != "" && !seen[id] {
+						seen[id] = true
+						out = append(out, contract.Entity{Kind: kind, ID: id, Display: m.Path})
+					}
+				}
+			}
 		case kind == contract.EntityCgroup && ev.Entity.Service != nil:
 			if path := strings.Trim(strings.TrimSpace(ev.Entity.Service.CgroupPath), "/"); path != "" {
 				id := "cgroup:" + path
@@ -680,12 +722,20 @@ func mergeUnvisited(dst, extra []contract.Candidate) []contract.Candidate {
 const absoluteMaxWall = 10 * time.Minute
 
 func safeReads(cap capability.Capability, scope contract.Entity, facts contract.Facts) (reads []source.Read, err error) {
-	defer func(){ if r:=recover(); r!=nil { err=fmt.Errorf("panic: %v",r) } }()
-	return cap.Reads(scope,facts),nil
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return cap.Reads(scope, facts), nil
 }
 
 func safeParse(cap capability.Capability, in capability.ParseInput) (ev contract.Evidence, err error) {
-	defer func(){ if r:=recover(); r!=nil { err=fmt.Errorf("panic: %v",r) } }()
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
 	return cap.Parse(in)
 }
 
@@ -693,55 +743,85 @@ func missingRequirement(cap capability.Capability, facts contract.Facts) string 
 	for _, req := range cap.Requires {
 		switch req {
 		case "root_or_ptrace":
-			if !facts.Root { return "requires root or CAP_SYS_PTRACE to read another user's process state. Run diagnos as root, or: setcap cap_sys_ptrace=ep /usr/local/bin/diagnos" }
+			if !facts.Root {
+				return "requires root or CAP_SYS_PTRACE to read another user's process state. Run diagnos as root, or: setcap cap_sys_ptrace=ep /usr/local/bin/diagnos"
+			}
 		case "syslog_or_root":
-			if !facts.Root { return "requires CAP_SYSLOG or root to read the kernel log. Run diagnos as root to enable OOM evidence." }
+			if !facts.Root {
+				return "requires CAP_SYSLOG or root to read the kernel log. Run diagnos as root to enable OOM evidence."
+			}
 		}
 	}
 	return ""
 }
 
 func unavailableEvidence(cap capability.Capability, scope contract.Entity, msg string) contract.Evidence {
-	return contract.Evidence{ID:"ev-unavailable-"+strings.ReplaceAll(cap.ID+":"+scope.ID,":","-"),Capability:cap.ID,Entity:scope,Dimension:cap.Dimension,Level:cap.Level,CollectedAt:time.Now(),Unavailable:msg}
+	return contract.Evidence{ID: "ev-unavailable-" + strings.ReplaceAll(cap.ID+":"+scope.ID, ":", "-"), Capability: cap.ID, Entity: scope, Dimension: cap.Dimension, Level: cap.Level, CollectedAt: time.Now(), Unavailable: msg}
 }
 
 func addNotice(inv *contract.Investigation, capabilityID, msg string) {
-	if inv==nil || capabilityID=="" || msg=="" { return }
-	for i:=range inv.Notices {
-		if inv.Notices[i].Capability==capabilityID { inv.Notices[i].Count++; return }
+	if inv == nil || capabilityID == "" || msg == "" {
+		return
 	}
-	inv.Notices=append(inv.Notices,contract.Notice{Capability:capabilityID,Message:msg,Count:1})
-}
-
-func sampledFailure(cap capability.Capability, c contract.Candidate, s source.Sample) (string,string) {
-	reads,_:=safeReads(cap,c.Scope,contract.Facts{})
-	for _, rr:=range reads {
-		for _, raw:=range append(s.T0.Reads[rr.Key],s.T1.Reads[rr.Key]...) {
-			if raw.Err==nil { continue }
-			if strings.Contains(raw.Err.Error(),"timed out after") { return "timed_out",raw.Err.Error() }
-			if rr.Optional || errors.Is(raw.Err, os.ErrNotExist) || errors.Is(raw.Err, syscall.ESRCH) { continue }
-			return "error",raw.Err.Error()
+	for i := range inv.Notices {
+		if inv.Notices[i].Capability == capabilityID {
+			inv.Notices[i].Count++
+			return
 		}
 	}
-	return "",""
+	inv.Notices = append(inv.Notices, contract.Notice{Capability: capabilityID, Message: msg, Count: 1})
+}
+
+func sampledFailure(cap capability.Capability, c contract.Candidate, s source.Sample) (string, string) {
+	reads, _ := safeReads(cap, c.Scope, contract.Facts{})
+	for _, rr := range reads {
+		for _, raw := range append(s.T0.Reads[rr.Key], s.T1.Reads[rr.Key]...) {
+			if raw.Err == nil {
+				continue
+			}
+			if strings.Contains(raw.Err.Error(), "timed out after") {
+				return "timed_out", raw.Err.Error()
+			}
+			if rr.Optional || errors.Is(raw.Err, os.ErrNotExist) || errors.Is(raw.Err, syscall.ESRCH) {
+				continue
+			}
+			return "error", raw.Err.Error()
+		}
+	}
+	return "", ""
 }
 
 func failureEvidence(cap capability.Capability, scope contract.Entity, class, detail string) contract.Evidence {
-	ev:=contract.Evidence{ID:"ev-failure-"+strings.ReplaceAll(cap.ID+":"+scope.ID,":","-"),Capability:cap.ID,Entity:scope,Dimension:cap.Dimension,Level:cap.Level,CollectedAt:time.Now(),Err:detail}
-	if class=="timed_out" { ev.TimedOut=true }
+	ev := contract.Evidence{ID: "ev-failure-" + strings.ReplaceAll(cap.ID+":"+scope.ID, ":", "-"), Capability: cap.ID, Entity: scope, Dimension: cap.Dimension, Level: cap.Level, CollectedAt: time.Now(), Err: detail}
+	if class == "timed_out" {
+		ev.TimedOut = true
+	}
 	return ev
 }
 
 func noticeForFailure(capID string, scope contract.Entity, class, detail string) string {
-	if class=="timed_out" { return fmt.Sprintf("%s(%s) timed out after 2s — the target may be on a hung filesystem or wedged process.",capID,scope.ID) }
-	return fmt.Sprintf("%s(%s) failed — %s",capID,scope.ID,truncate(detail,150))
+	if class == "timed_out" {
+		return fmt.Sprintf("%s(%s) timed out after 2s — the target may be on a hung filesystem or wedged process.", capID, scope.ID)
+	}
+	return fmt.Sprintf("%s(%s) failed — %s", capID, scope.ID, truncate(detail, 150))
 }
 
-func panicCode(capID string) string { sum:=sha256.Sum256([]byte(capID)); return fmt.Sprintf("%x",sum[:4]) }
-func truncate(s string,n int)string{r:=[]rune(s);if len(r)<=n{return s};return string(r[:n])+"..."}
+func panicCode(capID string) string {
+	sum := sha256.Sum256([]byte(capID))
+	return fmt.Sprintf("%x", sum[:4])
+}
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
+}
 
 func (e *Engine) progress(stage string) {
-	if e.opt.Progress != nil { e.opt.Progress(stage) }
+	if e.opt.Progress != nil {
+		e.opt.Progress(stage)
+	}
 }
 
 func isLocalHost(host string) bool {

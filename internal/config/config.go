@@ -33,8 +33,8 @@ type NarratorConfig struct {
 }
 
 type ServiceConfig struct {
-	User string `yaml:"user"`
-	Group string `yaml:"group"`
+	User          string `yaml:"user"`
+	Group         string `yaml:"group"`
 	DataDirectory string `yaml:"data_directory"`
 }
 
@@ -49,7 +49,9 @@ type Config struct {
 	Narrator NarratorConfig `yaml:"narrator"`
 	Service  ServiceConfig  `yaml:"service"`
 	Source   SourceConfig   `yaml:"source"`
-	Report   struct { MaxFindings int `yaml:"max_findings"` } `yaml:"report"`
+	Report   struct {
+		MaxFindings int `yaml:"max_findings"`
+	} `yaml:"report"`
 
 	Server struct {
 		Listen string `yaml:"listen"`

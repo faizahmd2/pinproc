@@ -27,11 +27,11 @@ import (
 )
 
 type triggerRequest struct {
-	Hint      string            `json:"hint,omitempty"`
+	Hint      string             `json:"hint,omitempty"`
 	Dimension contract.Dimension `json:"dimension,omitempty"`
-	Budget    string            `json:"budget,omitempty"`
-	Trigger   string            `json:"trigger,omitempty"`
-	NoAI      bool              `json:"no_ai,omitempty"`
+	Budget    string             `json:"budget,omitempty"`
+	Trigger   string             `json:"trigger,omitempty"`
+	NoAI      bool               `json:"no_ai,omitempty"`
 }
 
 type nativeServer struct {

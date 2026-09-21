@@ -10,7 +10,7 @@ import (
 
 func TestRenderMarkdownUsesMachineIdentityAndHidesDiagnosticsOnSuccess(t *testing.T) {
 	inv := &contract.Investigation{
-		Host:  "localhost",
+		Host: "localhost",
 		Machine: contract.MachineIdentity{
 			Hostname:     "ip-10-0-0-1",
 			PrimaryIP:    "10.0.0.1",
@@ -21,17 +21,17 @@ func TestRenderMarkdownUsesMachineIdentityAndHidesDiagnosticsOnSuccess(t *testin
 			Uptime:       2 * time.Hour,
 		},
 		MachineSnapshot: contract.MachineSnapshot{
-			CPUs:                 2,
-			CPUUtilizationPct:    15,
-			Load1:                0.2,
-			MemoryTotalBytes:     8 << 30,
-			MemoryUsedBytes:      3 << 30,
-			MemoryUsedPct:        37.5,
-			SwapUsedPct:          0,
-			RootDiskPath:         "/",
-			RootDiskTotalBytes:   40 << 30,
-			RootDiskUsedBytes:    10 << 30,
-			RootDiskUsedPct:      25,
+			CPUs:               2,
+			CPUUtilizationPct:  15,
+			Load1:              0.2,
+			MemoryTotalBytes:   8 << 30,
+			MemoryUsedBytes:    3 << 30,
+			MemoryUsedPct:      37.5,
+			SwapUsedPct:        0,
+			RootDiskPath:       "/",
+			RootDiskTotalBytes: 40 << 30,
+			RootDiskUsedBytes:  10 << 30,
+			RootDiskUsedPct:    25,
 		},
 		Duration:   time.Second,
 		Spent:      contract.Spend{Depth: 1},
@@ -59,7 +59,7 @@ func TestRenderMarkdownShowsDiagnosticsForCollectionFailure(t *testing.T) {
 		Machine:    contract.MachineIdentity{Hostname: "test-host"},
 		StopReason: contract.StopSufficientEvidence,
 		Hypotheses: []contract.Hypothesis{{Statement: "test", Entity: contract.Entity{Kind: contract.EntityMachine, ID: "machine"}}},
-		Evidence: []contract.Evidence{{Err: "read failed", Verify: []string{"/proc/stat"}, Entity: contract.Entity{Kind: contract.EntityMachine, ID: "machine"}}},
+		Evidence:   []contract.Evidence{{Err: "read failed", Verify: []string{"/proc/stat"}, Entity: contract.Entity{Kind: contract.EntityMachine, ID: "machine"}}},
 	}
 	got := RenderMarkdown(inv)
 	if !strings.Contains(got, "Verify") {

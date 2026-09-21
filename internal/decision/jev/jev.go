@@ -173,10 +173,10 @@ type noulAnswer struct {
 }
 
 type scoreAnswer struct {
-	Type          string            `json:"type"`
-	Score         float64           `json:"score"`
-	Legend        map[string]string `json:"legend"`
-	Confidence    float64           `json:"confidence"`
+	Type          string             `json:"type"`
+	Score         float64            `json:"score"`
+	Legend        map[string]string  `json:"legend"`
+	Confidence    float64            `json:"confidence"`
 	Probabilities map[string]float64 `json:"probabilities"`
 }
 

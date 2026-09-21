@@ -36,7 +36,7 @@ type IOFacts struct {
 }
 
 // NetworkFacts contains interface network evidence.
-type NetworkFacts struct { RxBPS, TxBPS, RxDropRate, RetransRate, ListenOverflowDelta float64 }
+type NetworkFacts struct{ RxBPS, TxBPS, RxDropRate, RetransRate, ListenOverflowDelta float64 }
 
 // LimitsFacts contains global limit evidence.
 type LimitsFacts struct {

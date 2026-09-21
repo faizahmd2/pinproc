@@ -1,11 +1,11 @@
 package process
 
 import (
-	"os"
 	"github.com/faizahmd2/pinproc/internal/capability/spec"
 	"github.com/faizahmd2/pinproc/internal/contract"
 	"github.com/faizahmd2/pinproc/internal/procfs"
 	"github.com/faizahmd2/pinproc/internal/source"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -30,7 +30,7 @@ type IOFacts struct {
 type FileFacts struct {
 	PID                                              int64
 	Total, Regular, Sockets, Pipes, Devices, Deleted uint64
-	DeletedBytes uint64
+	DeletedBytes                                     uint64
 	Samples                                          []FDEntry
 }
 

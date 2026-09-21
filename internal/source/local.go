@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -42,7 +42,9 @@ func NewLocal(procRoot, sysRoot string, maxBytes int) *Local {
 // NewLocalWithTimeout returns a local source with a configured risky-read timeout.
 func NewLocalWithTimeout(procRoot, sysRoot string, maxBytes int, timeout time.Duration) *Local {
 	s := NewLocal(procRoot, sysRoot, maxBytes)
-	if timeout > 0 { s.readTimeout = timeout }
+	if timeout > 0 {
+		s.readTimeout = timeout
+	}
 	return s
 }
 
@@ -52,10 +54,14 @@ func (s *Local) Name() string { return "local" }
 // StartupCheck validates the minimum host contract before an investigation begins.
 func (s *Local) StartupCheck() error {
 	f, err := os.Open(filepath.Join(s.procRoot, "stat"))
-	if err != nil { return fmt.Errorf("proc filesystem unavailable: %w", err) }
+	if err != nil {
+		return fmt.Errorf("proc filesystem unavailable: %w", err)
+	}
 	defer f.Close()
 	var one [1]byte
-	if _, err := f.Read(one[:]); err != nil { return fmt.Errorf("proc filesystem unreadable: %w", err) }
+	if _, err := f.Read(one[:]); err != nil {
+		return fmt.Errorf("proc filesystem unreadable: %w", err)
+	}
 	return nil
 }
 
@@ -100,14 +106,24 @@ func (s *Local) Snapshot(ctx context.Context, reads []Read) (Snapshot, error) {
 	buf := s.bufPool.Get().([]byte)
 	defer s.bufPool.Put(buf[:0])
 	for _, r := range reads {
-		select { case <-snapshotCtx.Done(): return out, snapshotCtx.Err(); default: }
+		select {
+		case <-snapshotCtx.Done():
+			return out, snapshotCtx.Err()
+		default:
+		}
 		items, e := s.expandReadBounded(snapshotCtx, r)
 		if e != nil {
-			if r.Optional { continue }
+			if r.Optional {
+				continue
+			}
 			return out, e
 		}
 		for _, p := range items {
-			select { case <-snapshotCtx.Done(): return out, snapshotCtx.Err(); default: }
+			select {
+			case <-snapshotCtx.Done():
+				return out, snapshotCtx.Err()
+			default:
+			}
 			x := s.readOneBounded(snapshotCtx, r, p)
 			out.Reads[r.Key] = append(out.Reads[r.Key], x)
 			out.Bytes += int64(len(x.Data))
@@ -143,29 +159,46 @@ func (s *Local) Sample(ctx context.Context, reads []Read, w time.Duration) (Samp
 func (s *Local) Close() error { return nil }
 
 func (s *Local) expandReadBounded(ctx context.Context, r Read) ([]string, error) {
-	type result struct{ items []string; err error }
+	type result struct {
+		items []string
+		err   error
+	}
 	ch := make(chan result, 1)
-	go func(){ items, err := s.expandRead(r); ch <- result{items, err} }()
-	select { case res := <-ch: return res.items, res.err; case <-ctx.Done(): return nil, ctx.Err() }
+	go func() { items, err := s.expandRead(r); ch <- result{items, err} }()
+	select {
+	case res := <-ch:
+		return res.items, res.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (s *Local) readOneBounded(ctx context.Context, r Read, p string) Raw {
 	ch := make(chan Raw, 1)
-	go func(){ ch <- s.readOne(r, p, make([]byte, 32*1024)) }()
+	go func() { ch <- s.readOne(r, p, make([]byte, 32*1024)) }()
 	timeout := s.readTimeout
-	if timeout <= 0 { timeout = 2 * time.Second }
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
-	case raw := <-ch: return raw
-	case <-ctx.Done(): return Raw{Key:r.Key, Path:p, Err:ctx.Err()}
-	case <-timer.C: return Raw{Key:r.Key, Path:p, Err:fmt.Errorf("read timed out after %s (path may be on a hung filesystem)", timeout)}
+	case raw := <-ch:
+		return raw
+	case <-ctx.Done():
+		return Raw{Key: r.Key, Path: p, Err: ctx.Err()}
+	case <-timer.C:
+		return Raw{Key: r.Key, Path: p, Err: fmt.Errorf("read timed out after %s (path may be on a hung filesystem)", timeout)}
 	}
 }
 
 func (s *Local) readOne(r Read, p string, buf []byte) Raw {
-	if r.Kind == ReadKmsg { return s.readKmsg(p, r.MaxBytes) }
-	if isRisky(r.Kind, r.Key, p) { return s.readWithDeadline(r, p, s.readTimeout) }
+	if r.Kind == ReadKmsg {
+		return s.readKmsg(p, r.MaxBytes)
+	}
+	if isRisky(r.Kind, r.Key, p) {
+		return s.readWithDeadline(r, p, s.readTimeout)
+	}
 	raw := Raw{Key: r.Key, Path: p}
 	limit := r.MaxBytes
 	if limit <= 0 {
@@ -210,19 +243,29 @@ func (s *Local) readOne(r Read, p string, buf []byte) Raw {
 }
 
 func isRisky(kind ReadKind, key, path string) bool {
-	if kind == ReadLink || kind == ReadGlobLinks { return true }
+	if kind == ReadLink || kind == ReadGlobLinks {
+		return true
+	}
 	return strings.Contains(key, "smaps") || strings.Contains(path, "/maps") || strings.Contains(path, "/smaps")
 }
 
 func (s *Local) readWithDeadline(r Read, p string, timeout time.Duration) Raw {
-	type result struct{ data []byte; err error }
+	type result struct {
+		data []byte
+		err  error
+	}
 	ch := make(chan result, 1)
 	go func() {
 		if r.Kind == ReadLink || r.Kind == ReadGlobLinks {
-			v, e := os.Readlink(p); ch <- result{data: []byte(v), err: e}; return
+			v, e := os.Readlink(p)
+			ch <- result{data: []byte(v), err: e}
+			return
 		}
 		f, e := os.Open(p)
-		if e != nil { ch <- result{err: e}; return }
+		if e != nil {
+			ch <- result{err: e}
+			return
+		}
 		defer f.Close()
 		data, e := io.ReadAll(io.LimitReader(f, int64(maxReadBytes(r, s.maxBytes))))
 		ch <- result{data: data, err: e}
@@ -235,31 +278,54 @@ func (s *Local) readWithDeadline(r Read, p string, timeout time.Duration) Raw {
 	}
 }
 
-func maxReadBytes(r Read, fallback int) int { if r.MaxBytes > 0 { return r.MaxBytes }; return fallback }
+func maxReadBytes(r Read, fallback int) int {
+	if r.MaxBytes > 0 {
+		return r.MaxBytes
+	}
+	return fallback
+}
 
 func (s *Local) readKmsg(p string, maxBytes int) Raw {
 	raw := Raw{Key: "kmsg", Path: p}
 	limit := maxReadBytes(Read{MaxBytes: maxBytes}, s.maxBytes)
 	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil { raw.Err = err; return raw }
+	if err != nil {
+		raw.Err = err
+		return raw
+	}
 	defer f.Close()
-	deadline := time.Now().Add(500*time.Millisecond)
+	deadline := time.Now().Add(500 * time.Millisecond)
 	lines := 0
 	buf := make([]byte, 8192)
 	for len(raw.Data) < limit && lines < 500 && time.Now().Before(deadline) {
 		n, e := f.Read(buf)
 		if n > 0 {
-			remain := limit-len(raw.Data); if n > remain { n = remain }
-			raw.Data = append(raw.Data, buf[:n]...); lines += bytesCountNewlines(buf[:n])
+			remain := limit - len(raw.Data)
+			if n > remain {
+				n = remain
+			}
+			raw.Data = append(raw.Data, buf[:n]...)
+			lines += bytesCountNewlines(buf[:n])
 		}
 		if e != nil {
-			if errors.Is(e, syscall.EAGAIN) || errors.Is(e, syscall.EWOULDBLOCK) { break }
-			raw.Err = e; break
+			if errors.Is(e, syscall.EAGAIN) || errors.Is(e, syscall.EWOULDBLOCK) {
+				break
+			}
+			raw.Err = e
+			break
 		}
 	}
 	return raw
 }
-func bytesCountNewlines(b []byte) int { n:=0; for _, x := range b { if x=='\n' { n++ } }; return n }
+func bytesCountNewlines(b []byte) int {
+	n := 0
+	for _, x := range b {
+		if x == '\n' {
+			n++
+		}
+	}
+	return n
+}
 
 func (s *Local) expandRead(r Read) ([]string, error) {
 	switch r.Kind {
@@ -291,25 +357,37 @@ func (s *Local) expandGlob(pattern string) ([]string, error) {
 	parts := strings.Split(filepath.Clean(pattern), string(os.PathSeparator))
 	cur := []string{string(os.PathSeparator)}
 	maxItems := 8192
-	if strings.Contains(pattern, "/fd/") { maxItems = 256 }
+	if strings.Contains(pattern, "/fd/") {
+		maxItems = 256
+	}
 	for i := 1; i < len(parts); i++ {
 		next := make([]string, 0)
 		for _, base := range cur {
 			part := parts[i]
 			if strings.ContainsAny(part, "*?[") {
 				es, e := os.ReadDir(base)
-				if e != nil { continue }
+				if e != nil {
+					continue
+				}
 				for _, x := range es {
 					if match(part, x.Name()) {
 						next = append(next, filepath.Join(base, x.Name()))
-						if len(next) >= maxItems { break }
+						if len(next) >= maxItems {
+							break
+						}
 					}
 				}
-			} else { next = append(next, filepath.Join(base, part)) }
-			if len(next) >= maxItems { break }
+			} else {
+				next = append(next, filepath.Join(base, part))
+			}
+			if len(next) >= maxItems {
+				break
+			}
 		}
 		cur = next
-		if len(cur) == 0 || len(cur) >= maxItems { break }
+		if len(cur) == 0 || len(cur) >= maxItems {
+			break
+		}
 	}
 	return cur, nil
 }
@@ -338,9 +416,12 @@ func (s *Local) readSmallBounded(ctx context.Context, path string, limit int) []
 	t := time.NewTimer(2 * time.Second)
 	defer t.Stop()
 	select {
-	case b := <-ch: return b
-	case <-ctx.Done(): return nil
-	case <-t.C: return nil
+	case b := <-ch:
+		return b
+	case <-ctx.Done():
+		return nil
+	case <-t.C:
+		return nil
 	}
 }
 func readSmall(p string, limit int) []byte {

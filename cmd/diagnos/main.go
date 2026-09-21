@@ -24,7 +24,8 @@ func main() {
 	druntime.Local(logger)
 	root := &cobra.Command{Use: "pinproc", Short: "pinproc — adaptive Linux resource investigation", Version: version}
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config path")
-	legacyServe := newServeCmd(); legacyServe.Hidden = true
+	legacyServe := newServeCmd()
+	legacyServe.Hidden = true
 	root.AddCommand(newServiceCmd(), legacyServe, newInvestigateCmd(), newCaptureCmd(), newReplayCmd())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
