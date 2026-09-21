@@ -10,8 +10,6 @@ server:
   listen: 127.0.0.1:8080
 
 service:
-  user: ""
-  group: ""
   data_directory: /var/lib/pinproc
 
 engine:
