@@ -2,15 +2,7 @@
 
 pinproc is a small, read-only Linux machine inspection service.
 
-It runs continuously as a system service, survives reboots, and performs an inspection only when POST /trigger is called. At most one inspection can run at a time. Every inspection has a durable lifecycle state:
-
-    idle -> running -> done
-
-or:
-
-    running -> failed / interrupted
-
-The service reads local Linux interfaces such as /proc, /sys, cgroups, process/thread state, sockets, limits and related kernel state.
+It runs continuously as a system service and performs an inspection when `POST /trigger` is called. It reads local Linux interfaces such as `/proc`, `/sys`, cgroups, process/thread state, sockets, limits and related kernel state.
 
 ## Supported release targets
 
@@ -27,299 +19,296 @@ The normal deployment path is a Linux VM with systemd.
 
 Copy and paste:
 
-    set -e
+```bash
+set -e
 
-    ARCH="$(uname -m)"
-    case "$ARCH" in
-      x86_64) ASSET="pinproc_linux_amd64" ;;
-      aarch64|arm64) ASSET="pinproc_linux_arm64" ;;
-      *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
-    esac
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64) ASSET="pinproc_linux_amd64" ;;
+  aarch64|arm64) ASSET="pinproc_linux_arm64" ;;
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
 
-    sudo install -d -m 0755 /etc/pinproc
-    sudo curl -fL       "https://github.com/faizahmd2/pinproc/releases/latest/download/$ASSET"       -o /usr/local/bin/pinproc
-    sudo chmod 0755 /usr/local/bin/pinproc
+sudo install -d -m 0755 /etc/pinproc
+sudo curl -fL "https://github.com/faizahmd2/pinproc/releases/latest/download/$ASSET"   -o /usr/local/bin/pinproc
+sudo chmod 0755 /usr/local/bin/pinproc
 
-    sudo curl -fL       "https://github.com/faizahmd2/pinproc/releases/latest/download/app.yaml"       -o /etc/pinproc/app.yaml
+sudo curl -fL "https://github.com/faizahmd2/pinproc/releases/latest/download/app.yaml"   -o /etc/pinproc/app.yaml
+```
 
 ### 2. Put the AI key in app.yaml
 
 Edit:
 
-    sudo vi /etc/pinproc/app.yaml
+```bash
+sudo vi /etc/pinproc/app.yaml
+```
 
 Set:
 
-    decision:
-      provider: jev
-      api_key: "<replace-with-ai-key>"
-      base_url: https://api.typesafe.ai
-      model: jev-latest
-      timeout: 10s
+```yaml
+decision:
+  provider: jev
+  api_key: "<replace-with-ai-key>"
+  base_url: https://api.typesafe.ai
+  model: jev-latest
+  timeout: 10s
+```
 
 Replace only the placeholder with the real key.
 
 No environment variable is required. Environment variables remain optional overrides.
 
-The default service settings are:
+### 3. Choose the service user (optional)
 
-    service:
-      user: ""
-      group: ""
-      data_directory: /var/lib/pinproc
+By default, keep:
 
-    output:
-      directory: /var/lib/pinproc/reports
+```yaml
+service:
+  user: ""
+  group: ""
+```
 
-When service.user is empty, installation uses the user who invoked sudo, for example ubuntu. When service.user is set to pinproc, the installer creates that dedicated service account when it does not already exist.
+When `service.user` is empty, the installer uses the account that invoked `sudo`.
 
-### 3. Install and start the service
+To run pinproc under a dedicated system account, first create the account and group:
+
+```bash
+sudo groupadd --system pinproc
+sudo useradd --system   --gid pinproc   --home-dir /var/lib/pinproc   --no-create-home   --shell /usr/sbin/nologin   pinproc
+```
+
+Then edit `/etc/pinproc/app.yaml`:
+
+```yaml
+service:
+  user: pinproc
+  group: pinproc
+  data_directory: /var/lib/pinproc
+
+output:
+  directory: /var/lib/pinproc/reports
+```
+
+The installer can also create the configured dedicated account automatically when it does not already exist. No additional filesystem permissions are normally required; the installer creates and owns the service data/report directories for the configured account.
+
+### 4. Install and start the service
 
 Run:
 
-    sudo /usr/local/bin/pinproc --config /etc/pinproc/app.yaml service install
+```bash
+sudo /usr/local/bin/pinproc --config /etc/pinproc/app.yaml service install
+```
 
-This command:
+This installs the systemd unit, enables pinproc for boot, creates the required data/report directories, and starts the service.
 
-- creates the configured service user if necessary
-- creates the service data/report directory
-- installs the systemd unit
-- enables it for boot
-- starts it immediately
+## 5. Check the service and logs
 
-Systemd brings enabled services back during normal boot through the configured boot target.
+Check that systemd enabled and started pinproc:
 
-Check it:
+```bash
+sudo systemctl is-enabled pinproc
+sudo systemctl is-active pinproc
+```
 
-    sudo systemctl status pinproc
+Check recent logs:
 
-Follow logs:
+```bash
+sudo journalctl -u pinproc -n 50 --no-pager
+```
 
-    sudo journalctl -u pinproc -f
+Follow logs live:
 
-Check service health:
+```bash
+sudo journalctl -u pinproc -f
+```
 
-    curl -sS http://127.0.0.1:8080/healthz | jq .
+Check the local health endpoint:
 
-## Linux service security
-
-The service is designed to run as an unprivileged account instead of running the inspection binary as root.
-
-The generated systemd unit restricts the service to these capabilities:
-
-    CAP_DAC_READ_SEARCH
-    CAP_SYS_PTRACE
-    CAP_SYSLOG
-
-The unit also uses systemd filesystem and namespace restrictions and writes persistent state only below /var/lib/pinproc.
-
-### Use the current user
-
-For the simplest setup, keep:
-
-    service:
-      user: ""
-      group: ""
-
-Then install with:
-
-    sudo /usr/local/bin/pinproc --config /etc/pinproc/app.yaml service install
-
-The service runs as the invoking account rather than as root.
-
-### Use a dedicated pinproc account
-
-For a dedicated account, set:
-
-    service:
-      user: pinproc
-      group: pinproc
-
-Then run the same install command.
-
-The installer creates the Linux system account if it is missing and assigns it a non-login shell.
-
-This is the recommended deployment shape when you want the inspection isolated from the normal login account.
-
-### Manually create the dedicated account (optional)
-
-The installer can create this account automatically. When you prefer to create it yourself, run:
-
-    sudo groupadd --system pinproc
-    sudo useradd --system --gid pinproc --home-dir /var/lib/pinproc --no-create-home --shell /usr/sbin/nologin pinproc
-
-Then keep service.user and service.group set to pinproc and run the service install command. Existing accounts are reused; the installer does not delete them.
+```bash
+curl -sS http://127.0.0.1:8080/healthz | jq .
+```
 
 ## Trigger an inspection
 
-There is one production inspection entry point:
+### With AI
 
-    POST /trigger
+AI is used when the configured provider has a real key:
 
-Example:
+```bash
+curl -sS -X POST http://127.0.0.1:8080/trigger   -H 'Content-Type: application/json'   -d '{
+    "hint": "request latency increased",
+    "dimension": "cpu",
+    "budget": "normal",
+    "trigger": "incident"
+  }' | jq .
+```
 
-    curl -sS -X POST http://127.0.0.1:8080/trigger       -H 'Content-Type: application/json'       -d '{
-        "hint": "request latency increased",
-        "dimension": "cpu",
-        "budget": "normal",
-        "trigger": "incident"
-      }' | jq .
+### Without AI
 
-AI is used by default when the configured provider has a real key.
+For a deterministic local run, add `"no_ai": true`:
 
-For a deterministic test run, explicitly add this field to the request:
-
+```bash
+curl -sS -X POST http://127.0.0.1:8080/trigger   -H 'Content-Type: application/json'   -d '{
+    "hint": "request latency increased",
+    "dimension": "cpu",
+    "budget": "normal",
+    "trigger": "incident",
     "no_ai": true
+  }' | jq .
+```
 
-### One inspection at a time
-
-If an inspection is already running, additional trigger requests do not start another one.
-
-They receive HTTP 409 Conflict with the active inspection ID:
-
-    {
-      "status": "running",
-      "id": "inv-...",
-      "message": "inspection already happening; wait for it to finish"
-    }
-
-Ten simultaneous callers therefore result in one active inspection and nine rejected trigger attempts.
-
-When the active inspection reaches a terminal state, the next trigger can start a new inspection.
+The trigger response returns the inspection ID and links for status and report.
 
 ## Inspect progress
 
 Use:
 
-    curl -i -sS http://127.0.0.1:8080/status | jq .
+```bash
+curl -sS http://127.0.0.1:8080/status | jq .
+```
 
-Typical running state:
+While an inspection is running, the response includes `"status": "running"` and the current stage.
 
-    {
-      "status": "running",
-      "id": "inv-...",
-      "stage": "deep_investigation"
-    }
+After the inspection is complete, the same endpoint returns `"status": "done"` and the completion time in `finished_at`:
 
-Typical completed state:
-
-    {
-      "status": "done",
-      "id": "inv-...",
-      "stage": "done"
-    }
-
-The state file is persistent:
-
-    /var/lib/pinproc/reports/state.json
-
-If the machine or service is restarted while an inspection is running, the next service startup marks that inspection as interrupted instead of leaving an indefinitely running state behind.
+```json
+{
+  "status": "done",
+  "id": "inv-...",
+  "stage": "done",
+  "started_at": "2026-09-21T10:20:30+05:30",
+  "updated_at": "2026-09-21T10:21:02+05:30",
+  "finished_at": "2026-09-21T10:21:02+05:30"
+}
+```
 
 ## Get the completed report
 
-While an inspection is running:
+For the machine-readable report:
 
-    curl -i http://127.0.0.1:8080/report?format=json
-
-returns HTTP 202 Accepted and the current state.
-
-After completion:
-
-    curl -sS http://127.0.0.1:8080/report?format=json | jq .
+```bash
+curl -sS http://127.0.0.1:8080/report?format=json | jq .
+```
 
 For the human-readable report:
 
-    curl -sS http://127.0.0.1:8080/report
+```bash
+curl -sS http://127.0.0.1:8080/report
+```
 
-Reports are retained in the configured report directory, with the latest completed investigation referenced by:
+Reports are stored under:
 
-    /var/lib/pinproc/reports/latest.txt
+```text
+/var/lib/pinproc/reports
+```
 
-## Failure behavior
+The latest completed investigation is referenced by:
 
-The service is intentionally fail-visible.
-
-If an inspection fails completely, the service writes an investigation report and marks its durable state as failed.
-
-A failure is never represented by "nothing happened".
-
-The journal also contains lifecycle messages including:
-
-    inspection accepted
-    inspection progress
-    inspection done
-    inspection failed
-    inspection panic
-
-Follow them with:
-
-    sudo journalctl -u pinproc -f
-
-## Reboot test
-
-After installation:
-
-    sudo systemctl is-enabled pinproc
-    sudo systemctl is-active pinproc
-
-Then reboot:
-
-    sudo reboot
-
-After reconnecting:
-
-    sudo systemctl is-active pinproc
-    curl -sS http://127.0.0.1:8080/healthz | jq .
-
-The service should be running again without manually launching the binary.
+```text
+/var/lib/pinproc/reports/latest.txt
+```
 
 ## Update to a new release
 
-Download the new release binary over the installed path, then restart:
+Download the new release binary over the installed path and restart the service:
 
-    ARCH="$(uname -m)"
-    case "$ARCH" in
-      x86_64) ASSET="pinproc_linux_amd64" ;;
-      aarch64|arm64) ASSET="pinproc_linux_arm64" ;;
-      *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
-    esac
+```bash
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64) ASSET="pinproc_linux_amd64" ;;
+  aarch64|arm64) ASSET="pinproc_linux_arm64" ;;
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
 
-    sudo curl -fL       "https://github.com/faizahmd2/pinproc/releases/latest/download/$ASSET"       -o /usr/local/bin/pinproc
-    sudo chmod 0755 /usr/local/bin/pinproc
-    sudo systemctl restart pinproc
+sudo curl -fL "https://github.com/faizahmd2/pinproc/releases/latest/download/$ASSET"   -o /usr/local/bin/pinproc
+sudo chmod 0755 /usr/local/bin/pinproc
+sudo systemctl restart pinproc
+```
 
-Your existing /etc/pinproc/app.yaml and report data remain in place.
+Your existing `/etc/pinproc/app.yaml` and report data remain in place.
 
-## Remove the service
+## Complete uninstallation
 
-    sudo /usr/local/bin/pinproc service uninstall
+Stop and disable the service:
 
-This removes the systemd service but deliberately preserves the configuration and reports.
+```bash
+sudo systemctl disable --now pinproc.service
+```
 
-## Developer commands
+Remove the systemd unit, binary, configuration, and all pinproc application data:
 
-The deployed service uses service run and starts inspections only through POST /trigger.
+```bash
+sudo rm -f /etc/systemd/system/pinproc.service
+sudo systemctl daemon-reload
 
-The repository also contains developer-oriented one-shot commands:
+sudo rm -f /usr/local/bin/pinproc
+sudo rm -rf /etc/pinproc
+sudo rm -rf /var/lib/pinproc
+```
 
-    ./pinproc investigate localhost --no-ai --budget fast
-    ./pinproc capture localhost --no-ai --budget fast --out ./captures
-    ./pinproc replay ./captures/<inspection> --budget fast --out ./replay-output
+If you created a dedicated `pinproc` system account and group, remove them too:
 
-These are useful for local debugging and fixture creation; they are not the production service integration path.
+```bash
+sudo userdel pinproc
+sudo groupdel pinproc
+```
 
-## Build and test
+This removes pinproc's installed files, service state, configuration, reports, and dedicated service account. System-wide journal history is managed by systemd and is not removed by these commands.
 
-    make test
-    make vet
-    make build
-    make release
+## Local development
 
-make release produces only:
+Clone the repository:
 
-    dist/pinproc_linux_amd64
-    dist/pinproc_linux_arm64
-    dist/app.yaml
-    dist/checksums.txt
+```bash
+git clone https://github.com/faizahmd2/pinproc.git
+cd pinproc
+```
 
-The service is intentionally Linux-only because its collection layer uses Linux /proc, /sys and cgroup interfaces.
+Create a local config so the service writes inside the checkout instead of `/var/lib/pinproc`:
+
+```bash
+cp app.yaml app.local.yaml
+```
+
+Set these values in `app.local.yaml`:
+
+```yaml
+service:
+  user: ""
+  group: ""
+  data_directory: ./data
+
+output:
+  directory: ./data/reports
+```
+
+For a no-AI local run, the API key can remain as the placeholder.
+
+Start the service directly with Go:
+
+```bash
+go run ./cmd/diagnos service run --config ./app.local.yaml
+```
+
+From another terminal, trigger an inspection:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/trigger   -H 'Content-Type: application/json'   -d '{"hint":"local development check","dimension":"cpu","budget":"fast","trigger":"dev","no_ai":true}' | jq .
+```
+
+Check the result:
+
+```bash
+curl -sS http://127.0.0.1:8080/status | jq .
+curl -sS http://127.0.0.1:8080/report
+```
+
+Run the basic Go checks from the repository root:
+
+```bash
+go test ./...
+go vet ./...
+```
+
+The production service is Linux-only because the collection layer uses Linux `/proc`, `/sys` and cgroup interfaces.
