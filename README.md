@@ -10,7 +10,7 @@ or:
 
     running -> failed / interrupted
 
-The service reads local Linux interfaces such as /proc, /sys, cgroups, process/thread state, sockets, limits and related kernel state. It does not use SSH, eBPF, Prometheus, node_exporter or historical telemetry.
+The service reads local Linux interfaces such as /proc, /sys, cgroups, process/thread state, sockets, limits and related kernel state.
 
 ## Supported release targets
 
@@ -18,8 +18,6 @@ Production releases are Linux only:
 
 - x86_64 / amd64
 - arm64 / aarch64
-
-macOS/Darwin is intentionally not released.
 
 ## Install from the latest GitHub release
 
@@ -43,8 +41,6 @@ Copy and paste:
     sudo chmod 0755 /usr/local/bin/pinproc
 
     sudo curl -fL       "https://github.com/faizahmd2/pinproc/releases/latest/download/app.yaml"       -o /etc/pinproc/app.yaml
-
-The release workflow publishes these Linux assets from version tags. GitHub supports automated release management and release assets. citeturn472478search0turn472478search2
 
 ### 2. Put the AI key in app.yaml
 
@@ -91,7 +87,7 @@ This command:
 - enables it for boot
 - starts it immediately
 
-Systemd brings enabled services back during normal boot through the configured boot target. citeturn472478search9
+Systemd brings enabled services back during normal boot through the configured boot target.
 
 Check it:
 
