@@ -90,8 +90,6 @@ output:
   directory: /var/lib/pinproc/reports
 ```
 
-The installer can also create the configured dedicated account automatically when it does not already exist. No additional filesystem permissions are normally required; the installer creates and owns the service data/report directories for the configured account.
-
 ### 4. Install and start the service
 
 Run:
