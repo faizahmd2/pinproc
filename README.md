@@ -59,38 +59,9 @@ Replace only the placeholder with the real key.
 
 No environment variable is required. Environment variables remain optional overrides.
 
-### 3. Choose the service user (optional)
+The pinproc installer does not create, modify, or delete Linux users or groups, and it does not apply a user/group policy to the systemd service. Any service identity or host-level security policy remains under the machine owner's control.
 
-By default, keep:
-
-```yaml
-service:
-  user: ""
-  group: ""
-```
-
-When `service.user` is empty, the installer uses the account that invoked `sudo`.
-
-To run pinproc under a dedicated system account, first create the account and group:
-
-```bash
-sudo groupadd --system pinproc
-sudo useradd --system   --gid pinproc   --home-dir /var/lib/pinproc   --no-create-home   --shell /usr/sbin/nologin   pinproc
-```
-
-Then edit `/etc/pinproc/app.yaml`:
-
-```yaml
-service:
-  user: pinproc
-  group: pinproc
-  data_directory: /var/lib/pinproc
-
-output:
-  directory: /var/lib/pinproc/reports
-```
-
-### 4. Install and start the service
+### 3. Install and start the service
 
 Run:
 
@@ -98,9 +69,9 @@ Run:
 sudo /usr/local/bin/pinproc --config /etc/pinproc/app.yaml service install
 ```
 
-This installs the systemd unit, enables pinproc for boot, creates the required data/report directories, and starts the service.
+This installs the systemd unit, enables pinproc for boot, creates the required pinproc data/report directories, and starts the service.
 
-## 5. Check the service and logs
+### 4. Check the service and logs
 
 Check that systemd enabled and started pinproc:
 
@@ -245,14 +216,9 @@ sudo rm -rf /etc/pinproc
 sudo rm -rf /var/lib/pinproc
 ```
 
-If you created a dedicated `pinproc` system account and group, remove them too:
+The installer does not create or manage Linux users or groups, so there is no pinproc account or group for the application to remove.
 
-```bash
-sudo userdel pinproc
-sudo groupdel pinproc
-```
-
-This removes pinproc's installed files, service state, configuration, reports, and dedicated service account. System-wide journal history is managed by systemd and is not removed by these commands.
+System-wide journal history is managed by systemd and is not removed by these commands.
 
 ## Local development
 
@@ -273,8 +239,6 @@ Set these values in `app.local.yaml`:
 
 ```yaml
 service:
-  user: ""
-  group: ""
   data_directory: ./data
 
 output:
