@@ -33,6 +33,8 @@ type NarratorConfig struct {
 }
 
 type ServiceConfig struct {
+	User          string `yaml:"user"`
+	Group         string `yaml:"group"`
 	DataDirectory string `yaml:"data_directory"`
 }
 
