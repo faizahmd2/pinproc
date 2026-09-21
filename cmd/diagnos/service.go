@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/faizahmd2/pinproc/internal/config"
@@ -53,15 +51,6 @@ func newServiceInstallCmd() *cobra.Command {
 				return fmt.Errorf("load config: %w", err)
 			}
 
-			serviceUser, serviceGroup, err := resolveServiceAccount(cfg.Service.User, cfg.Service.Group)
-			if err != nil {
-				return err
-			}
-			uid, gid, err := lookupIDs(serviceUser, serviceGroup)
-			if err != nil {
-				return err
-			}
-
 			dataDir := strings.TrimSpace(cfg.Service.DataDirectory)
 			if dataDir == "" {
 				dataDir = "/var/lib/pinproc"
@@ -69,22 +58,16 @@ func newServiceInstallCmd() *cobra.Command {
 			if err := os.MkdirAll(dataDir, 0750); err != nil {
 				return fmt.Errorf("create data directory: %w", err)
 			}
-			if err := os.Chown(dataDir, uid, gid); err != nil {
-				return fmt.Errorf("own data directory: %w", err)
-			}
 
-			outputDir, err := resolveServiceOutput(cfg.Output.Directory, serviceUser)
+			outputDir, err := config.ResolveOutputDirectory(cfg.Output.Directory)
 			if err != nil {
 				return err
 			}
 			if err := os.MkdirAll(outputDir, 0750); err != nil {
 				return fmt.Errorf("create report directory: %w", err)
 			}
-			if err := os.Chown(outputDir, uid, gid); err != nil {
-				return fmt.Errorf("own report directory: %w", err)
-			}
 
-			if err := installConfig(cfgFile, serviceUser, serviceGroup); err != nil {
+			if err := installConfig(cfgFile); err != nil {
 				return err
 			}
 			exe, err := os.Executable()
@@ -97,7 +80,7 @@ func newServiceInstallCmd() *cobra.Command {
 			if err := installServiceBinary(exe); err != nil {
 				return err
 			}
-			if err := os.WriteFile(serviceUnitPath, []byte(renderServiceUnit(serviceBinaryPath, serviceUser, serviceGroup, dataDir)), 0644); err != nil {
+			if err := os.WriteFile(serviceUnitPath, []byte(renderServiceUnit(serviceBinaryPath, dataDir)), 0644); err != nil {
 				return fmt.Errorf("write systemd unit: %w", err)
 			}
 			if err := runSystemctl("daemon-reload"); err != nil {
@@ -109,7 +92,7 @@ func newServiceInstallCmd() *cobra.Command {
 			if err := runSystemctl("restart", "pinproc.service"); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "pinproc service installed and started as %s:%s\n", serviceUser, serviceGroup)
+			fmt.Fprintln(cmd.OutOrStdout(), "pinproc service installed and started")
 			fmt.Fprintln(cmd.OutOrStdout(), "logs: sudo journalctl -u pinproc -f")
 			return nil
 		},
@@ -137,103 +120,7 @@ func newServiceUninstallCmd() *cobra.Command {
 	}
 }
 
-func resolveServiceAccount(configUser, configGroup string) (string, string, error) {
-	u := strings.TrimSpace(configUser)
-	if u == "" {
-		u = strings.TrimSpace(os.Getenv("SUDO_USER"))
-	}
-	if u == "" {
-		cur, err := user.Current()
-		if err != nil {
-			return "", "", err
-		}
-		u = cur.Username
-	}
-	if u == "" {
-		return "", "", fmt.Errorf("could not determine service user")
-	}
-
-	if _, err := user.Lookup(u); err != nil {
-		if strings.TrimSpace(configUser) == "" {
-			return "", "", fmt.Errorf("service user %q does not exist", u)
-		}
-		if err := ensureServiceUser(u, configGroup); err != nil {
-			return "", "", err
-		}
-	}
-	g := strings.TrimSpace(configGroup)
-	if g == "" {
-		usr, err := user.Lookup(u)
-		if err != nil {
-			return "", "", err
-		}
-		grp, err := user.LookupGroupId(usr.Gid)
-		if err != nil {
-			return "", "", err
-		}
-		g = grp.Name
-	}
-	if _, err := user.LookupGroup(g); err != nil {
-		return "", "", fmt.Errorf("service group %q does not exist", g)
-	}
-	return u, g, nil
-}
-
-func ensureServiceUser(name, group string) error {
-	if group != "" {
-		if _, err := user.LookupGroup(group); err != nil {
-			if err := exec.Command("groupadd", "--system", group).Run(); err != nil {
-				return fmt.Errorf("create service group %q: %w", group, err)
-			}
-		}
-	}
-	args := []string{"--system", "--home-dir", "/var/lib/pinproc", "--no-create-home", "--shell", "/usr/sbin/nologin"}
-	if group != "" {
-		args = append(args, "--gid", group)
-	}
-	args = append(args, name)
-	if err := exec.Command("useradd", args...).Run(); err != nil {
-		return fmt.Errorf("create service user %q: %w", name, err)
-	}
-	return nil
-}
-
-func lookupIDs(serviceUser, serviceGroup string) (int, int, error) {
-	u, err := user.Lookup(serviceUser)
-	if err != nil {
-		return 0, 0, err
-	}
-	g, err := user.LookupGroup(serviceGroup)
-	if err != nil {
-		return 0, 0, err
-	}
-	uid, err := strconv.Atoi(u.Uid)
-	if err != nil {
-		return 0, 0, err
-	}
-	gid, err := strconv.Atoi(g.Gid)
-	if err != nil {
-		return 0, 0, err
-	}
-	return uid, gid, nil
-}
-
-func resolveServiceOutput(path, serviceUser string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return "/var/lib/pinproc/reports", nil
-	}
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		u, err := user.Lookup(serviceUser)
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(u.HomeDir, strings.TrimPrefix(path, "~/")), nil
-	}
-	return filepath.Clean(path), nil
-}
-
-func installConfig(sourcePath, serviceUser, serviceGroup string) error {
+func installConfig(sourcePath string) error {
 	data, err := os.ReadFile(sourcePath)
 	if err != nil {
 		return fmt.Errorf("read config %s: %w", sourcePath, err)
@@ -243,19 +130,6 @@ func installConfig(sourcePath, serviceUser, serviceGroup string) error {
 	}
 	if err := os.WriteFile(serviceConfigPath, data, 0640); err != nil {
 		return fmt.Errorf("write %s: %w", serviceConfigPath, err)
-	}
-	u, err := user.Lookup(serviceUser)
-	if err != nil {
-		return err
-	}
-	g, err := user.LookupGroup(serviceGroup)
-	if err != nil {
-		return err
-	}
-	uid, _ := strconv.Atoi(u.Uid)
-	gid, _ := strconv.Atoi(g.Gid)
-	if err := os.Chown(serviceConfigPath, uid, gid); err != nil {
-		return err
 	}
 	return nil
 }
@@ -289,10 +163,6 @@ func installServiceBinary(source string) error {
 		_ = tmp.Close()
 		return fmt.Errorf("chmod staged service executable: %w", err)
 	}
-	if err := tmp.Chown(0, 0); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chown staged service executable: %w", err)
-	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write staged service executable: %w", err)
@@ -309,8 +179,9 @@ func installServiceBinary(source string) error {
 	}
 	return nil
 }
-func renderServiceUnit(exe, serviceUser, serviceGroup, dataDir string) string {
-	return fmt.Sprintf("[Unit]\nDescription=pinproc Linux inspection service\nAfter=local-fs.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart=%s service run --config %s\nWorkingDirectory=%s\nUser=%s\nGroup=%s\nRestart=on-failure\nRestartSec=2s\nTimeoutStopSec=30s\nKillSignal=SIGTERM\nEnvironment=HOME=%s\n\nCapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\nAmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG\n\nProtectSystem=strict\nProtectHome=true\nProtectKernelModules=true\nProtectKernelTunables=true\nProtectControlGroups=true\nPrivateTmp=true\nReadWritePaths=%s\nRestrictNamespaces=true\nRestrictRealtime=true\nLockPersonality=true\n\n[Install]\nWantedBy=multi-user.target\n", exe, serviceConfigPath, dataDir, serviceUser, serviceGroup, dataDir, dataDir)
+
+func renderServiceUnit(exe, dataDir string) string {
+	return fmt.Sprintf("[Unit]\nDescription=pinproc Linux inspection service\nAfter=local-fs.target network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nExecStart=%s service run --config %s\nWorkingDirectory=%s\nRestart=on-failure\nRestartSec=2s\nTimeoutStopSec=30s\nKillSignal=SIGTERM\n\n[Install]\nWantedBy=multi-user.target\n", exe, serviceConfigPath, dataDir)
 }
 
 func runSystemctl(args ...string) error {
