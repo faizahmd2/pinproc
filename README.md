@@ -4,6 +4,8 @@
 
 pinproc is a small, read-only Linux machine inspection service.
 
+[License](LICENSE) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
 It runs continuously as a system service and performs an inspection when `POST /trigger` is called. It reads local Linux interfaces such as `/proc`, `/sys`, cgroups, process/thread state, sockets, limits and related kernel state.
 
 ## Supported release targets
