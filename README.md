@@ -1,4 +1,6 @@
-# pinproc
+
+<img width="1536" height="1024" alt="pinproc" src="https://github.com/user-attachments/assets/83a03e90-113c-44a7-b0ff-f18de480be30" />
+
 
 pinproc is a small, read-only Linux machine inspection service.
 
