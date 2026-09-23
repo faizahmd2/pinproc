@@ -21,6 +21,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Verify release source
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          echo "Building ${GITHUB_REF_NAME} from ${GITHUB_SHA}"
+
       - name: Test
         run: go test ./...
 
@@ -40,4 +45,4 @@ jobs:
             dist/app.yaml \
             dist/checksums.txt \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+            --notes "Read-only Linux machine diagnostics using bounded system evidence and AI-assisted analysis."
