@@ -73,7 +73,7 @@ func TestReportReturnsProcessingWithoutPreviousReport(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), ""id"") {
+	if strings.Contains(rec.Body.String(), "\"" + "id" + "\"") {
 		t.Fatalf("unexpected id in response: %s", rec.Body.String())
 	}
 }

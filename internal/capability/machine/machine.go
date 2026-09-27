@@ -319,7 +319,7 @@ func parseNetwork(in spec.ParseInput) (contract.Evidence, error) {
 	f.TCPOrphan = float64(sock1.TCPOrphan)
 	f.TCPTimeWait = float64(sock1.TCPTimeWait)
 	f.TCPAlloc = float64(sock1.TCPAlloc)
-	_ = sock0
+
 	return ev("ev-machine-network", "machine.network", contract.DimensionNetwork, contract.L1Machine, f,
 		[]contract.Observation{
 			o("net.rx_bps", f.RxBPS, "bytes_per_sec"),
