@@ -37,7 +37,7 @@ func newInvestigateCmd() *cobra.Command {
 				return err
 			}
 			if out == "" {
-				out, err = config.ResolveOutputDirectory(cfg.Service.DataDirectory)
+				out, err = config.ResolveOutputDirectory(config.DataDirectory)
 			} else {
 				out, err = config.ResolveOutputDirectory(out)
 			}

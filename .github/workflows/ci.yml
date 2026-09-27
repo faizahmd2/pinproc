@@ -7,7 +7,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -25,3 +25,52 @@ jobs:
 
       - name: Build
         run: make build
+
+      - name: Verify core has no vendor provider dependency
+        run: |
+          ! go list -deps ./cmd/diagnos | grep -q "/internal/decision/jev"
+          ! strings pinproc | grep -q "api.typesafe.ai"
+          ! strings pinproc | grep -q "/v1/systemone"
+
+      - name: Build provider
+        run: make build-provider
+
+      - name: Build release artifacts
+        run: make release VERSION=0.0.0
+
+      - name: Build Debian packages
+        run: |
+          make package-deb GOARCH=amd64 VERSION=0.0.0
+          make package-provider-jev GOARCH=amd64 VERSION=0.0.0
+          ls -lh dist/*.deb
+
+      - name: Smoke install and purge
+        run: |
+          CORE=./dist/pinproc_0.0.0_amd64.deb
+          PROVIDER=./dist/pinproc-provider-jev_0.0.0_amd64.deb
+          sudo apt install -y "$CORE" "$PROVIDER"
+          test -x /usr/bin/pinproc
+          test -x /usr/libexec/pinproc/providers/jev
+          test -f /usr/lib/systemd/system/pinproc.service
+          test -f /usr/share/pinproc/providers/jev.yaml
+          test -f /etc/pinproc/config.yaml
+          test -d /var/lib/pinproc
+          getent passwd pinproc
+          getent group pinproc
+          sudo apt remove -y pinproc-provider-jev
+          test -x /usr/bin/pinproc
+          test ! -e /usr/libexec/pinproc/providers/jev
+          test ! -e /usr/share/pinproc/providers/jev.yaml
+          sudo apt remove -y pinproc
+          test -f /etc/pinproc/config.yaml
+          test -d /var/lib/pinproc
+          sudo apt install -y "$CORE"
+          sudo apt purge -y pinproc
+          test ! -e /usr/bin/pinproc
+          test ! -e /usr/lib/systemd/system/pinproc.service
+          test ! -e /etc/pinproc
+          test ! -e /var/lib/pinproc
+          test ! -e /usr/libexec/pinproc
+          test ! -e /usr/share/pinproc
+          ! getent passwd pinproc
+          ! getent group pinproc

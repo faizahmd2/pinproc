@@ -5,34 +5,39 @@ import (
 	"os"
 )
 
-const ReferenceYAML = `# pinproc configuration
-# The agent is local-only and reads the machine's OS directly.
+const ReferenceYAML = `# pinproc managed configuration
+# Use "sudo pinproc setup ..." to change the installed configuration.
+
+version: 1
+
+app:
+  name: pinproc
+  log_level: info
 
 server:
   listen: 127.0.0.1:8080
+  api_key: ""
 
-engine:
-  budget: normal
-  sample_window: 1s
-  parallel_width: 3
-
-decision:
-  provider: jev
-  base_url: https://api.typesafe.ai
-  model: jev-latest
-  timeout: 10s
-  api_key: "<replace-with-ai-key>"
+ai:
+  provider: ""
+  config: {}
 
 narrator:
   enabled: true
 
-output:
-  directory: ~/pinproc/reports
+source:
+  read_timeout: 2s
+
+report:
+  max_findings: 5
+
+callback:
+  enabled: false
+  url: ""
+  timeout: 5s
 `
 
 func WriteReference(path string, force bool) error {
-	if _, err := os.Stat(path); err == nil && !force {
-		return fmt.Errorf("refusing to overwrite %s; pass --force", path)
-	}
+	if _, err := os.Stat(path); err == nil && !force { return fmt.Errorf("refusing to overwrite %s; pass --force", path) }
 	return os.WriteFile(path, []byte(ReferenceYAML), 0600)
 }

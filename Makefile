@@ -1,14 +1,17 @@
-.PHONY: build release test test-race bench vet fmt fmt-check install clean
-
-VERSION ?= dev
+# pinproc development and packaging entrypoint
+.PHONY: build build-provider release package-deb package-provider-jev test test-race bench vet fmt fmt-check install clean
+VERSION ?= 0.1.0
+GOARCH ?= amd64
+NFPM_VERSION ?= v2.47.0
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-PREFIX ?= /usr/local
-BINDIR ?= $(PREFIX)/bin
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o pinproc ./cmd/diagnos
+
+build-provider:
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o pinproc-provider-jev ./cmd/pinproc-provider-jev
 
 test:
 	go test ./...
@@ -28,21 +31,26 @@ fmt:
 fmt-check:
 	@test -z "$$(find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -l)"
 
-install: build
-	install -d "$(DESTDIR)$(BINDIR)"
-	install -m 0755 pinproc "$(DESTDIR)$(BINDIR)/pinproc"
-	install -d "$(DESTDIR)/etc/pinproc"
-	install -m 0644 app.yaml "$(DESTDIR)/etc/pinproc/app.yaml"
-
 release:
 	rm -rf dist
 	mkdir -p dist
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_amd64 ./cmd/diagnos
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_arm64 ./cmd/diagnos
-	cp app.yaml dist/app.yaml
-	chmod 0755 dist/pinproc_linux_*
-	cd dist && sha256sum pinproc_linux_* app.yaml > checksums.txt
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc-provider-jev_linux_amd64 ./cmd/pinproc-provider-jev
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc-provider-jev_linux_arm64 ./cmd/pinproc-provider-jev
+
+package-deb:
+	mkdir -p dist
+	GOOS=linux GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/pinproc.nfpm.yaml --packager deb --target dist/
+
+package-provider-jev:
+	mkdir -p dist
+	GOOS=linux GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/providers/jev.nfpm.yaml --packager deb --target dist/
+
+install: build
+	install -d "$(DESTDIR)/usr/local/bin"
+	install -m 0755 pinproc "$(DESTDIR)/usr/local/bin/pinproc"
 
 clean:
 	rm -rf dist
-	rm -f pinproc
+	rm -f pinproc pinproc-provider-jev

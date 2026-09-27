@@ -1,184 +1,14 @@
-<img width="1536" height="1024" alt="pinproc" src="https://github.com/user-attachments/assets/83a03e90-113c-44a7-b0ff-f18de480be30" />
-
 # pinproc
 
-pinproc is a small, read-only Linux machine investigator.
+pinproc is a read-only Linux machine investigator.
 
-It treats the Linux OS as the system boundary. Everything running on it, Node, MySQL, Redis, Nginx, Java, containers, and so on, is an OS resource consumer. pinproc first measures the machine, then follows evidence to the process, thread, cgroup, file descriptor, or socket that best explains the pressure.
+It treats the Linux OS as the system boundary. Everything running on the host, Node, MySQL, Redis, Nginx, Java, containers and so on, is an OS resource consumer. pinproc measures the machine first, then follows evidence toward the process, thread, cgroup, file descriptor or socket that best explains the pressure.
 
-It does not require cloud-provider APIs and does not change the machine it investigates. When reporting host identity, pinproc uses the hostname configured by Linux and an IP address actually assigned to the host. If the host owns a public address, it is preferred; otherwise an internal address is reported. pinproc does not try to discover a cloud-provider or NAT address.
+Collection is native and read-only. pinproc does not require a cloud-provider API and does not use a mandatory central service.
 
-## What it looks at
+## Architecture
 
-- CPU: utilization, per-core imbalance, load, iowait, PSI, steal, runnable and blocked work.
-- Memory: available memory, swap, reclaim, major faults, OOM kills and PSI.
-- Block I/O: read/write throughput, IOPS, utilization, await, in-flight I/O and PSI.
-- Network: RX/TX, drops, TCP retransmits, listen-backlog overflow and socket pressure.
-- Processes: CPU, memory, I/O, threads, process state, limits and process tree.
-- Files and sockets: descriptor ownership, socket counts, TCP connection states, listeners and deleted-open files.
-- cgroups and filesystem capacity when the OS exposes them.
-- Service identity: systemd unit, executable, command line, user, cgroup, container identity and listening ports when provable.
-
-All collection is read-only and bounded.
-
-## Install
-
-Production releases support Linux amd64 and arm64.
-
-Download the latest binary and configuration:
-
-~~~bash
-ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64) ASSET="pinproc_linux_amd64" ;;
-  aarch64|arm64) ASSET="pinproc_linux_arm64" ;;
-  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
-esac
-
-sudo install -d -m 0755 /etc/pinproc
-sudo curl -fL "https://github.com/faizahmd2/pinproc/releases/latest/download/$ASSET"   -o /usr/local/bin/pinproc
-sudo chmod 0755 /usr/local/bin/pinproc
-
-sudo curl -fL "https://github.com/faizahmd2/pinproc/releases/latest/download/app.yaml"   -o /etc/pinproc/app.yaml
-~~~
-
-Put the JEV key in <code>/etc/pinproc/app.yaml</code>.
-
-The installer creates the <code>pinproc</code> system user and group by default, creates <code>/var/lib/pinproc</code>, fixes its ownership, installs the systemd unit and starts the service.
-
-~~~bash
-sudo /usr/local/bin/pinproc --config /etc/pinproc/app.yaml service install
-~~~
-
-Check the service:
-
-~~~bash
-sudo systemctl is-enabled pinproc
-sudo systemctl is-active pinproc
-sudo journalctl -u pinproc -n 50 --no-pager
-~~~
-
-## The API
-
-There are only three HTTP endpoints.
-
-### Investigate
-
-~~~http
-GET /investigate
-~~~
-
-No request body.
-
-Optional query parameters:
-
-~~~text
-hint
-dimension
-~~~
-
-Examples:
-
-~~~bash
-curl http://127.0.0.1:8080/investigate
-curl "http://127.0.0.1:8080/investigate?hint=API%20latency%20increased"
-curl "http://127.0.0.1:8080/investigate?dimension=cpu"
-~~~
-
-pinproc waits up to 30 seconds for the investigation to finish.
-
-When it finishes in that window, the response is the complete investigation report.
-
-If another investigation is already running:
-
-~~~json
-{
-  "status": "processing",
-  "message": "An investigation is already in progress."
-}
-~~~
-
-If the investigation is still running after 30 seconds:
-
-~~~json
-{
-  "status": "processing",
-  "message": "Investigation is still running. Use GET /report for the result."
-}
-~~~
-
-There are no public investigation IDs and no public status lookup.
-
-### Report
-
-~~~http
-GET /report
-~~~
-
-Returns the latest completed report.
-
-While a new investigation is running, <code>/report</code> reports that the current result is still processing instead of silently returning an older report.
-
-After two minutes of an unchanged pending state, <code>/report</code> may return the previous completed report as a clearly marked <code>stale</code> response. The returned report contains its own <code>incident_checked_at</code> timestamp so an older investigation cannot be mistaken for the current incident.
-
-### Health
-
-~~~http
-GET /health
-~~~
-
-Returns a small health response for process supervision and monitoring.
-
-Unknown paths and unsupported HTTP methods behave like missing endpoints.
-
-## Authentication
-
-The service listens on loopback by default.
-
-When <code>server.api_key</code> is configured and the request is not loopback, send:
-
-~~~http
-Authorization: Bearer <api-key>
-~~~
-
-The API only uses <code>hint</code> and <code>dimension</code> as investigation query parameters.
-
-## Callback
-
-A callback is optional. When enabled, pinproc sends the completed investigation report once to the configured HTTP endpoint.
-
-~~~yaml
-callback:
-  enabled: true
-  url: https://example.example/pinproc
-  timeout: 5s
-~~~
-
-Callback delivery is best-effort and does not change the diagnostic result. A callback failure is logged separately.
-
-This makes pinproc easy to connect to Grafana alerts, Google Cloud Monitoring alerts, Prometheus-based systems, PagerDuty, or a company-specific incident endpoint without putting vendor logic into the core investigator.
-
-## Reports and safety
-
-pinproc keeps one report and one small state file:
-
-~~~text
-/var/lib/pinproc/
-├── report.json
-└── state.json
-~~~
-
-Reports are replaced atomically. pinproc does not retain a growing investigation history.
-
-The investigation itself is bounded. Reads are size-limited, risky filesystem reads have timeouts, deep inspection has explicit limits, and report output is bounded by the engine's evidence and finding limits.
-
-The service performs no installation, configuration change, process control, database write, filesystem cleanup, or other mutation on the machine it investigates.
-
-## How diagnosis works
-
-The core flow is:
-
-~~~text
+```text
 Linux kernel state
       ↓
 bounded native reads
@@ -187,61 +17,166 @@ typed evidence
       ↓
 deterministic rules
       ↓
-AI reasoning over bounded evidence
+optional AI provider
       ↓
 developer-readable report
-~~~
+```
 
-AI does not replace machine evidence.
+The core binary is provider-neutral. AI providers are separate packages that implement a versioned local JSON protocol. The core does not contain vendor HTTP clients.
 
-A report should describe what was observed, which OS owner was associated with it, and how strong that connection is. It should not claim application-internal facts that pinproc cannot observe.
+```text
+pinproc
+  └── provider protocol v1
+        ├── JEV provider
+        ├── company-internal provider
+        └── local-model provider
+```
 
-For example, pinproc may establish:
+Removing all AI providers leaves pinproc operational with deterministic rules.
 
-~~~text
-Block I/O pressure observed
-        ↓
-mysqld has the highest observed write throughput
-        ↓
-mysql.service owns the process
-        ↓
-mysqld owns a large number of open sockets / file descriptors
-~~~
+## Install
 
-That is an OS-level diagnosis.
+Production packages target Linux amd64 and arm64.
 
-It does not need to know which SQL query is slow.
+Install a release package directly:
+
+```bash
+sudo apt install ./pinproc_0.1.0_linux_amd64.deb
+```
+
+Or use the optional release installer:
+
+```bash
+curl -fsSL https://github.com/faizahmd2/pinproc/releases/download/v0.1.0/install.sh | PINPROC_VERSION=0.1.0 bash
+```
+
+The package creates a dedicated unprivileged `pinproc` system user and group, installs the systemd service, creates `/var/lib/pinproc`, and creates the managed configuration at `/etc/pinproc/config.yaml`.
+
+The service runs as `pinproc` rather than root. It receives only the Linux capabilities required for read-only host inspection and is writable only to `/var/lib/pinproc`.
+
+## Configuration
+
+Installed configuration is managed through the CLI. End users should not need to edit the configuration file directly.
+
+```bash
+sudo pinproc setup ai
+sudo pinproc setup callback --url https://example.example/pinproc
+sudo pinproc setup callback --disable
+sudo pinproc setup server --listen 127.0.0.1:8080
+sudo pinproc setup server --clear-api-key
+```
+
+Changing configuration restarts the pinproc systemd service so the new configuration becomes active immediately.
+
+The active configuration contains only provider-neutral fields plus provider-specific key/value settings. Vendor-specific configuration belongs to the selected provider package.
+
+Inspect configuration safely:
+
+```bash
+sudo pinproc config show
+sudo pinproc config show --json
+sudo pinproc config validate
+```
+
+Secrets are redacted from `config show` output.
+
+## AI
+
+AI is optional.
+
+Without an AI provider, pinproc continues with deterministic rules and records a small notice that AI is not configured. Configure a provider when you want additional contextual reasoning over the bounded evidence.
+
+List providers:
+
+```bash
+pinproc ai list
+```
+
+Configure one:
+
+```bash
+sudo pinproc setup ai
+sudo sudo pinproc ai status
+```
+
+Disable AI:
+
+```bash
+sudo pinproc ai remove
+```
+
+Provider packages are independent of the core package. For example, the JEV provider is distributed separately as `pinproc-provider-jev` and is not part of the core `pinproc` executable.
+
+## Provider protocol
+
+Provider executables are trusted software installed by the machine administrator. They run with the same `pinproc` service identity and communicate over JSON on standard input/output.
+
+Request:
+
+```json
+{
+  "protocol_version": 1,
+  "action": "ask",
+  "state": {},
+  "questions": {},
+  "config": {}
+}
+```
+
+Response:
+
+```json
+{
+  "protocol_version": 1,
+  "answers": {}
+}
+```
+
+Provider configuration, including secrets, is passed over stdin JSON and is never placed in process arguments.
+
+See [docs/provider-protocol.md](docs/provider-protocol.md).
+
+## API
+
+```http
+GET /health
+GET /investigate
+GET /report
+```
+
+`/investigate` accepts optional `hint` and `dimension` query parameters. One investigation is allowed at a time. The normal budget permits up to eight logical AI decision calls; an individual provider may perform its own transport retries inside one logical call.
+
+## Reports
+
+pinproc keeps one current report and one small state file:
+
+```text
+/var/lib/pinproc/
+├── report.json
+└── state.json
+```
+
+Reports are replaced atomically. pinproc does not retain an unbounded history.
+
+## Host identity
+
+pinproc reports the Linux hostname and an IP address actually assigned to an active non-loopback interface. A public address is preferred when the host owns one; otherwise an internal address is used. pinproc does not ask a cloud provider for identity or try to infer a NAT address.
+
+## Package lifecycle
+
+`apt remove pinproc` removes the package and leaves operator configuration/data in place, following normal Debian package behavior.
+
+`apt purge pinproc` removes the package-owned configuration and runtime data. The dedicated `pinproc` user and group are removed only when this package created them, so an administrator-owned account is not deleted accidentally.
+
+After purge, pinproc's package-owned filesystem paths, service unit, runtime data, configuration and package-created service account are removed. System package-manager/journal history is still controlled by the operating system.
 
 ## Development
 
-Clone the repository and use a local configuration:
-
-~~~bash
-git clone https://github.com/faizahmd2/pinproc.git
-cd pinproc
-cp app.yaml app.local.yaml
-~~~
-
-Set:
-
-~~~yaml
-service:
-  user: ""
-  group: ""
-  data_directory: ./data
-~~~
-
-Then:
-
-~~~bash
-go run ./cmd/diagnos service run --config ./app.local.yaml
-~~~
-
-Run the test suite:
-
-~~~bash
+```bash
 go test ./...
 go vet ./...
-~~~
+make build
+make build-provider
+```
 
-The production collection layer is Linux-only because it reads Linux /proc, /sys, cgroups and kernel state directly.
+The Linux collection layer reads `/proc`, `/sys`, cgroups and kernel state directly and is therefore Linux-specific.

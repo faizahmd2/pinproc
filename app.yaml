@@ -1,6 +1,8 @@
-# pinproc V2 configuration.
-# The service is Linux-only and reads the local OS directly.
-# End users normally only need the AI key and optional callback.
+# pinproc managed configuration template.
+# Installed systems keep active configuration in /etc/pinproc/config.yaml.
+# Change it with sudo pinproc setup ..., not by editing files.
+
+version: 1
 
 app:
   name: pinproc
@@ -10,17 +12,9 @@ server:
   listen: 127.0.0.1:8080
   api_key: ""
 
-service:
-  user: pinproc
-  group: pinproc
-  data_directory: /var/lib/pinproc
-
-decision:
-  provider: jev
-  api_key: "<replace-with-ai-key>"
-  base_url: https://api.typesafe.ai
-  model: jev-latest
-  timeout: 10s
+ai:
+  provider: ""
+  config: {}
 
 narrator:
   enabled: true

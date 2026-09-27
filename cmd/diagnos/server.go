@@ -62,7 +62,7 @@ func newServeCmd() *cobra.Command {
 			if listen == "" {
 				listen = "127.0.0.1:8080"
 			}
-			dir, err := config.ResolveOutputDirectory(cfg.Service.DataDirectory)
+			dir, err := config.ResolveOutputDirectory(config.DataDirectory)
 			if err != nil {
 				return err
 			}
@@ -96,6 +96,7 @@ func newServeCmd() *cobra.Command {
 				WriteTimeout: 35 * time.Second,
 				IdleTimeout: 60 * time.Second,
 			}
+			if notice := decisionNotice(cfg); notice != "" { logger.Warn("ai reasoning unavailable", "message", notice) }
 			logger.Info("pinproc service started", "addr", listen, "report_dir", dir)
 			return srv.ListenAndServe()
 		},

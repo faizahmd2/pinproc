@@ -250,6 +250,7 @@ const (
 	StopBudgetTime         StopReason = "budget_time"
 	StopBudgetSteps        StopReason = "budget_steps"
 	StopBudgetBytes        StopReason = "budget_bytes"
+	StopBudgetDecisionCalls StopReason = "budget_decision_calls"
 	StopDeadEnd            StopReason = "dead_end"
 	StopUnavailable        StopReason = "capability_unavailable"
 	StopError              StopReason = "error"
