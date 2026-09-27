@@ -1,0 +1,31 @@
+name: pinproc-provider-jev
+arch: ${GOARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+maintainer: "pinproc contributors"
+description: "JEV provider for pinproc"
+homepage: "https://github.com/faizahmd2/pinproc"
+license: "Apache-2.0"
+section: utils
+priority: optional
+depends:
+  - pinproc
+
+contents:
+  - src: dist/pinproc-provider-jev_linux_${GOARCH}
+    dst: /usr/libexec/pinproc/providers/jev
+    expand: true
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+  - src: packaging/providers/jev.yaml
+    dst: /usr/share/pinproc/providers/jev.yaml
+    file_info:
+      mode: 0644
+      owner: root
+      group: root
+
+deb:
+  compression: zstd
