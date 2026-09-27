@@ -1,0 +1,24 @@
+app:
+  name: pinproc
+  log_level: info
+
+server:
+  listen: 127.0.0.1:8080
+
+ai:
+  enabled: false
+  provider: ""
+  config: {}
+
+narrator:
+  enabled: true
+
+source:
+  read_timeout: 2s
+
+report:
+  max_findings: 5
+
+callback:
+  enabled: false
+  timeout: 5s

@@ -5,29 +5,36 @@ import (
 	"os"
 )
 
-const ReferenceYAML = `# pinproc configuration
-# The agent is local-only and reads the machine's OS directly.
+const ReferenceYAML = `# pinproc managed configuration
+# Production configuration should be changed with:
+#   sudo pinproc setup ai
+#   sudo pinproc setup callback
+#   sudo pinproc setup server
+
+app:
+  name: pinproc
+  log_level: info
 
 server:
   listen: 127.0.0.1:8080
 
-engine:
-  budget: normal
-  sample_window: 1s
-  parallel_width: 3
-
-decision:
-  provider: jev
-  base_url: https://api.typesafe.ai
-  model: jev-latest
-  timeout: 10s
-  api_key: "<replace-with-ai-key>"
+ai:
+  enabled: false
+  provider: ""
+  config: {}
 
 narrator:
   enabled: true
 
-output:
-  directory: ~/pinproc/reports
+source:
+  read_timeout: 2s
+
+report:
+  max_findings: 5
+
+callback:
+  enabled: false
+  timeout: 5s
 `
 
 func WriteReference(path string, force bool) error {

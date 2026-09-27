@@ -3,46 +3,97 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Verify release source
-        run: |
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          echo "Building ${GITHUB_REF_NAME} from ${GITHUB_SHA}"
-
       - name: Test
         run: go test ./...
-
       - name: Vet
         run: go vet ./...
 
-      - name: Build release
-        run: make release VERSION=${GITHUB_REF_NAME}
+  package:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+          - goarch: arm64
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+      - name: Build binary
+        env:
+          VERSION: ${{ github.ref_name }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -trimpath             -ldflags "-s -w -X main.version=$VERSION -X main.commit=$GITHUB_SHA -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"             -o "dist/pinproc_linux_$GOARCH" ./cmd/diagnos
+      - name: Build Debian package
+        env:
+          VERSION: ${{ github.ref_name }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          NFPM_BINARY="$PWD/dist/pinproc_linux_$GOARCH"             VERSION="$VERSION" GOARCH="$GOARCH"             "$(go env GOPATH)/bin/nfpm"             --config packaging/nfpm.yaml             --packager deb             --target "dist/pinproc_${VERSION}_${GOARCH}.deb"
+      - name: Inspect package
+        env:
+          VERSION: ${{ github.ref_name }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          dpkg-deb --info "dist/pinproc_${VERSION}_${GOARCH}.deb"
+          dpkg-deb --contents "dist/pinproc_${VERSION}_${GOARCH}.deb"
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinproc-${{ matrix.goarch }}
+          path: |
+            dist/pinproc_linux_${{ matrix.goarch }}
+            dist/pinproc_${{ github.ref_name }}_${{ matrix.goarch }}.deb
 
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pinproc-*
+          path: release
+          merge-multiple: true
+      - name: Prepare release assets
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          cp "release/pinproc_${VERSION}_amd64.deb" release/pinproc_amd64.deb
+          cp "release/pinproc_${VERSION}_arm64.deb" release/pinproc_arm64.deb
+          sha256sum release/pinproc_amd64.deb release/pinproc_arm64.deb > release/checksums.txt
+          cp scripts/install.sh release/install.sh
+          chmod 0755 release/install.sh
       - name: Publish GitHub release
         env:
+          VERSION: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            dist/pinproc_linux_amd64 \
-            dist/pinproc_linux_arm64 \
-            dist/app.yaml \
-            dist/checksums.txt \
-            --title "${GITHUB_REF_NAME}" \
-            --notes "Read-only Linux machine diagnostics using bounded system evidence and AI-assisted analysis."
+          gh release create "$VERSION"             release/pinproc_amd64.deb             release/pinproc_arm64.deb             release/checksums.txt             release/install.sh             --title "$VERSION"             --generate-notes

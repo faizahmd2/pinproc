@@ -1,0 +1,41 @@
+[Unit]
+Description=pinproc Linux machine investigator
+Documentation=https://github.com/faizahmd2/pinproc
+Wants=network-online.target
+After=local-fs.target network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pinproc service run
+User=pinproc
+Group=pinproc
+UMask=0027
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+
+StateDirectory=pinproc
+StateDirectoryMode=0750
+
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
+AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+
+ReadOnlyPaths=/etc/pinproc /usr/libexec/pinproc /usr/share/pinproc
+ReadWritePaths=/var/lib/pinproc
+
+[Install]
+WantedBy=multi-user.target

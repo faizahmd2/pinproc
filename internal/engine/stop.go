@@ -16,6 +16,9 @@ func ShouldStop(now, start time.Time, spent contract.Spend, b contract.Budget) c
 	if b.MaxBytes > 0 && spent.Bytes >= b.MaxBytes {
 		return contract.StopBudgetBytes
 	}
+	if b.MaxDecisionCalls > 0 && spent.DecisionCalls >= b.MaxDecisionCalls {
+		return contract.StopBudgetDecisionCalls
+	}
 	if b.MaxWall > 0 && now.Sub(start) >= b.MaxWall {
 		return contract.StopBudgetTime
 	}

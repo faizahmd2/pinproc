@@ -1,35 +1,33 @@
 package decision
 
-import (
-	"context"
-)
+import "context"
 
 // QuestionType defines the bounded judgment primitive.
 type QuestionType string
 
 const (
-	QNoul   QuestionType = "noul"
-	QChoice QuestionType = "choice"
-	QScore  QuestionType = "score"
+	QBoolean QuestionType = "boolean"
+	QChoice  QuestionType = "choice"
+	QScore   QuestionType = "score"
 )
 
 // Question is one bounded model question.
 type Question struct {
-	Type         QuestionType
-	Instructions string
-	Criteria     map[string]string
-	Levels       []string
+	Type         QuestionType      `json:"type"`
+	Instructions string            `json:"instructions"`
+	Criteria     map[string]string `json:"criteria,omitempty"`
+	Levels       []string          `json:"levels,omitempty"`
 }
 
-// Answer is a normalized model answer.
+// Answer is a normalized provider answer.
 type Answer struct {
-	Type          QuestionType
-	Noul          float64
-	Choice        string
-	Score         float64
-	Confidence    float64
-	Probabilities map[string]float64
-	Legend        map[string]string
+	Type          QuestionType       `json:"type"`
+	Boolean       float64            `json:"boolean,omitempty"`
+	Choice        string             `json:"choice,omitempty"`
+	Score         float64            `json:"score,omitempty"`
+	Confidence    float64            `json:"confidence,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+	Legend        map[string]string  `json:"legend,omitempty"`
 }
 
 // Provider is the AI decision boundary.

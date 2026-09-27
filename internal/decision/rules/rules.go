@@ -3,9 +3,10 @@ package rules
 import (
 	"context"
 	"encoding/json"
-	"github.com/faizahmd2/pinproc/internal/decision"
 	"sort"
 	"strings"
+
+	"github.com/faizahmd2/pinproc/internal/decision"
 )
 
 // Provider is the deterministic no-AI decision implementation.
@@ -98,17 +99,17 @@ func (*Provider) Ask(_ context.Context, state any, questions map[string]decision
 			}
 			out[key] = decision.Answer{Type: q.Type, Choice: choice, Confidence: 0.75}
 		case "explains_anomaly":
-			out[key] = decision.Answer{Type: q.Type, Noul: 0.8, Confidence: 0.6}
+			out[key] = decision.Answer{Type: q.Type, Boolean: 0.8, Confidence: 0.6}
 		case "deeper_warranted":
 			n := 0.1
 			if len(m.Evidence) > 0 && m.Evidence[len(m.Evidence)-1].Capability != "thread.scheduler" {
 				n = 0.8
 			}
-			out[key] = decision.Answer{Type: q.Type, Noul: n, Confidence: 0.8}
+			out[key] = decision.Answer{Type: q.Type, Boolean: n, Confidence: 0.8}
 		case "severity":
 			out[key] = decision.Answer{Type: q.Type, Score: float64(maxSeverity(m.Signals)), Confidence: 0.7}
 		default:
-			out[key] = decision.Answer{Type: q.Type, Noul: 0.5}
+			out[key] = decision.Answer{Type: q.Type, Boolean: 0.5}
 		}
 	}
 	return out, nil

@@ -5,17 +5,22 @@ import (
 	"testing"
 )
 
-func TestRenderServiceUnit(t *testing.T) {
-	unit := renderServiceUnit("/usr/local/bin/pinproc", "pinproc", "pinproc", "/var/lib/pinproc")
-	for _, want := range []string{
-		"ExecStart=/usr/local/bin/pinproc service run --config /etc/pinproc/app.yaml",
-		"User=pinproc",
-		"Group=pinproc",
-		"Restart=on-failure",
-		"WantedBy=multi-user.target",
-	} {
-		if !strings.Contains(unit, want) {
-			t.Fatalf("service unit missing %q:\n%s", want, unit)
-		}
+func TestServiceCommandOnlyExposesRuntimeEntrypoint(t *testing.T) {
+	cmd := newServiceCmd()
+	if !cmd.Hidden && cmd.Use != "service" {
+		t.Fatalf("unexpected command: %#v", cmd)
+	}
+	children := cmd.Commands()
+	if len(children) != 1 {
+		t.Fatalf("expected one child command, got %d", len(children))
+	}
+	if children[0].Name() != "run" {
+		t.Fatalf("unexpected child: %s", children[0].Name())
+	}
+	if !children[0].Hidden {
+		t.Fatal("service run must remain hidden")
+	}
+	if strings.Contains(children[0].UsageString(), "install") || strings.Contains(children[0].UsageString(), "uninstall") {
+		t.Fatal("service lifecycle must be owned by the package manager")
 	}
 }

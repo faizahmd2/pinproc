@@ -1,4 +1,4 @@
-.PHONY: build release test test-race bench vet fmt fmt-check install clean
+.PHONY: build release package test test-race bench vet fmt fmt-check install clean
 
 VERSION ?= dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -31,17 +31,22 @@ fmt-check:
 install: build
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 0755 pinproc "$(DESTDIR)$(BINDIR)/pinproc"
-	install -d "$(DESTDIR)/etc/pinproc"
-	install -m 0644 app.yaml "$(DESTDIR)/etc/pinproc/app.yaml"
+
+package:
+	@test -n "$(GOARCH)" || (echo "GOARCH is required" && exit 1)
+	@test -n "$(VERSION)" || (echo "VERSION is required" && exit 1)
+	mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_$(GOARCH) ./cmd/diagnos
+	NFPM_BINARY="$(CURDIR)/dist/pinproc_linux_$(GOARCH)" VERSION="$(VERSION)" GOARCH="$(GOARCH)" go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0 --config packaging/nfpm.yaml --packager deb --target "dist/pinproc_$(VERSION)_$(GOARCH).deb"
 
 release:
 	rm -rf dist
 	mkdir -p dist
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_amd64 ./cmd/diagnos
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_arm64 ./cmd/diagnos
-	cp app.yaml dist/app.yaml
+	cp config.example.yaml dist/config.example.yaml
 	chmod 0755 dist/pinproc_linux_*
-	cd dist && sha256sum pinproc_linux_* app.yaml > checksums.txt
+	cd dist && sha256sum pinproc_linux_* config.example.yaml > checksums.txt
 
 clean:
 	rm -rf dist

@@ -2,20 +2,26 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-type DecisionConfig struct {
-	Provider string        `yaml:"provider"`
-	BaseURL  string        `yaml:"base_url"`
-	Model    string        `yaml:"model"`
-	APIKey   string        `yaml:"api_key"`
-	Timeout  time.Duration `yaml:"timeout"`
+const (
+	ManagedPath = "/etc/pinproc/config.yaml"
+	StateDir    = "/var/lib/pinproc"
+)
+
+type AIConfig struct {
+	Enabled  bool           `yaml:"enabled"`
+	Provider string         `yaml:"provider,omitempty"`
+	Config   map[string]any `yaml:"config,omitempty"`
 }
 
 type SourceConfig struct {
@@ -26,15 +32,9 @@ type NarratorConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
-type ServiceConfig struct {
-	User          string `yaml:"user"`
-	Group         string `yaml:"group"`
-	DataDirectory string `yaml:"data_directory"`
-}
-
 type CallbackConfig struct {
 	Enabled bool          `yaml:"enabled"`
-	URL     string        `yaml:"url"`
+	URL     string        `yaml:"url,omitempty"`
 	Timeout time.Duration `yaml:"timeout"`
 }
 
@@ -44,17 +44,17 @@ type Config struct {
 		LogLevel string `yaml:"log_level"`
 	} `yaml:"app"`
 
-	Decision DecisionConfig `yaml:"decision"`
+	Server struct {
+		Listen string `yaml:"listen"`
+		APIKey string `yaml:"api_key,omitempty"`
+	} `yaml:"server"`
+
+	AI       AIConfig       `yaml:"ai"`
 	Narrator NarratorConfig `yaml:"narrator"`
-	Service  ServiceConfig  `yaml:"service"`
 	Source   SourceConfig   `yaml:"source"`
 	Report   struct {
 		MaxFindings int `yaml:"max_findings"`
 	} `yaml:"report"`
-	Server struct {
-		Listen string `yaml:"listen"`
-		APIKey string `yaml:"api_key"`
-	} `yaml:"server"`
 	Callback CallbackConfig `yaml:"callback"`
 }
 
@@ -64,11 +64,15 @@ func Load(path string) (*Config, error) {
 		path = DiscoverPath()
 	}
 	if path != "" {
-		if resolved, err := filepath.Abs(path); err == nil {
+		resolved, err := filepath.Abs(path)
+		if err == nil {
 			path = resolved
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
+			if os.IsNotExist(err) {
+				return &cfg, nil
+			}
 			return nil, err
 		}
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
@@ -83,103 +87,144 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// DiscoverPath returns the first conventional configuration file.
 func DiscoverPath() string {
-	candidates := []string{"app.yaml", "app.yml", filepath.Join("configs", "app.yaml"), filepath.Join("configs", "app.yml")}
-	if executable, err := os.Executable(); err == nil {
-		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-			executable = resolved
-		}
-		dir := filepath.Dir(executable)
-		candidates = append(candidates, filepath.Join(dir, "app.yaml"), filepath.Join(dir, "app.yml"))
-	}
-	candidates = append(candidates, filepath.Join("/etc", "pinproc", "app.yaml"), filepath.Join("/etc", "pinproc", "app.yml"))
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		candidates = append(candidates, filepath.Join(xdg, "pinproc", "config.yml"))
-	} else if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(home, ".config", "pinproc", "config.yml"),
-			filepath.Join(home, ".pinproc", "config.yml"),
-		)
-	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	return ""
+	return ManagedPath
 }
 
 func defaults() Config {
 	var cfg Config
 	cfg.App.Name = "pinproc"
 	cfg.App.LogLevel = "info"
-	cfg.Decision.Provider = "jev"
-	cfg.Decision.BaseURL = "https://api.typesafe.ai"
-	cfg.Decision.Model = "jev-latest"
-	cfg.Decision.Timeout = 10 * time.Second
+	cfg.Server.Listen = "127.0.0.1:8080"
+	cfg.AI.Enabled = false
+	cfg.AI.Config = map[string]any{}
 	cfg.Narrator.Enabled = true
-	cfg.Service.User = "pinproc"
-	cfg.Service.Group = "pinproc"
-	cfg.Service.DataDirectory = "/var/lib/pinproc"
 	cfg.Source.ReadTimeout = 2 * time.Second
 	cfg.Report.MaxFindings = 5
-	cfg.Server.Listen = "127.0.0.1:8080"
 	cfg.Callback.Timeout = 5 * time.Second
 	return cfg
 }
 
 func normalize(cfg *Config) {
-	key := strings.TrimSpace(cfg.Decision.APIKey)
-	switch key {
-	case "<replace-with-ai-key>", "replace-with-ai-key", "YOUR_AI_KEY", "CHANGE_ME":
-		cfg.Decision.APIKey = ""
+	cfg.AI.Provider = strings.TrimSpace(cfg.AI.Provider)
+	if cfg.AI.Config == nil {
+		cfg.AI.Config = map[string]any{}
 	}
 }
 
-func applyEnv(cfg *Config) {
-	if v := os.Getenv("TYPESAFE_API_KEY"); v != "" {
-		cfg.Decision.APIKey = v
+func applyEnv(cfg *Config) {}
+
+func Validate(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
 	}
-	if v := os.Getenv("DIAGNOS_DECISION_API_KEY"); v != "" {
-		cfg.Decision.APIKey = v
+	if strings.TrimSpace(cfg.App.Name) == "" {
+		cfg.App.Name = "pinproc"
 	}
-	if v := os.Getenv("DIAGNOS_API_KEY"); v != "" {
-		cfg.Server.APIKey = v
+	if cfg.Source.ReadTimeout <= 0 {
+		cfg.Source.ReadTimeout = 2 * time.Second
 	}
-	if v := os.Getenv("DIAGNOS_DECISION_PROVIDER"); v != "" {
-		cfg.Decision.Provider = v
+	if cfg.Report.MaxFindings < 1 {
+		cfg.Report.MaxFindings = 5
 	}
-	if v := os.Getenv("DIAGNOS_DECISION_MODEL"); v != "" {
-		cfg.Decision.Model = v
+	if cfg.Callback.Timeout <= 0 {
+		cfg.Callback.Timeout = 5 * time.Second
 	}
-	if v := os.Getenv("DIAGNOS_DECISION_BASE_URL"); v != "" {
-		cfg.Decision.BaseURL = v
+	if cfg.Callback.Timeout > 30*time.Second {
+		cfg.Callback.Timeout = 30 * time.Second
 	}
-	if v := os.Getenv("PINPROC_CALLBACK_URL"); v != "" {
-		cfg.Callback.URL = v
-		cfg.Callback.Enabled = true
+	if strings.TrimSpace(cfg.Server.Listen) == "" {
+		cfg.Server.Listen = "127.0.0.1:8080"
 	}
+	if cfg.AI.Enabled && cfg.AI.Provider == "" {
+		return fmt.Errorf("ai.provider is required when ai.enabled is true")
+	}
+	if cfg.Callback.Enabled && strings.TrimSpace(cfg.Callback.URL) == "" {
+		return fmt.Errorf("callback.url is required when callback.enabled is true")
+	}
+	if !isLoopbackListen(cfg.Server.Listen) && strings.TrimSpace(cfg.Server.APIKey) == "" {
+		return fmt.Errorf("non-loopback server.listen requires server.api_key")
+	}
+	return nil
 }
 
-func ResolveOutputDirectory(path string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return "", fmt.Errorf("data directory cannot be empty")
+func SaveManaged(cfg *Config) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("managed configuration must be changed as root")
 	}
-	if path == "~" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve home directory: %w", err)
-		}
-		return home, nil
+	return Save(ManagedPath, cfg)
+}
+
+func Save(path string, cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
 	}
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve home directory: %w", err)
-		}
-		return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
+	if err := Validate(cfg); err != nil {
+		return err
 	}
-	return filepath.Clean(path), nil
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".pinproc-config-*")
+	if err != nil {
+		return fmt.Errorf("create temporary config: %w", err)
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err := tmp.Chmod(0640); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := setConfigOwnership(name); err != nil {
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		return fmt.Errorf("replace config: %w", err)
+	}
+	return nil
+}
+
+func setConfigOwnership(path string) error {
+	if os.Geteuid() != 0 {
+		return nil
+	}
+	group, err := user.LookupGroup("pinproc")
+	if err != nil {
+		return nil
+	}
+	gid, err := strconv.Atoi(group.Gid)
+	if err != nil {
+		return err
+	}
+	if err := os.Chown(path, 0, gid); err != nil {
+		return fmt.Errorf("set config ownership: %w", err)
+	}
+	return nil
+}
+
+func isLoopbackListen(listen string) bool {
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }

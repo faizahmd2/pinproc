@@ -177,7 +177,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	if err != nil {
 		e.opt.Logger.Warn("decision provider failed; falling back", "error", err)
 		ans, _ = drules.New().Ask(ctx, json.RawMessage(state), decision.AssessQuestions())
-		decidedBy = "rules:jev_unavailable"
+		decidedBy = "rules:provider_unavailable"
 		addNotice(inv, "decision", "AI decision provider unavailable — "+truncate(err.Error(), 150)+"; using deterministic rules.")
 	}
 	choice := ""
@@ -360,15 +360,15 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 				Depth:      contract.L1Machine,
 				Capability: "decision.next",
 				Scope:      "machine",
-				DecidedBy:  "rules:jev_unavailable",
+				DecidedBy:  "rules:provider_unavailable",
 				Err:        err.Error(),
 			})
 		}
-		if a, ok := answers["explains_anomaly"]; ok && a.Noul >= 0.75 {
+		if a, ok := answers["explains_anomaly"]; ok && a.Boolean >= 0.75 {
 			inv.StopReason = contract.StopSufficientEvidence
 			break
 		}
-		if a, ok := answers["deeper_warranted"]; ok && a.Noul < 0.5 {
+		if a, ok := answers["deeper_warranted"]; ok && a.Boolean < 0.5 {
 			inv.StopReason = contract.StopSufficientEvidence
 			break
 		}

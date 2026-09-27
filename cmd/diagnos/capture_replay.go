@@ -37,7 +37,7 @@ func newCaptureCmd() *cobra.Command {
 			}
 			base := out
 			if base == "" {
-				base, err = config.ResolveOutputDirectory(cfg.Service.DataDirectory)
+				base, err = config.StateDir
 			} else {
 				base, err = config.ResolveOutputDirectory(base)
 			}
