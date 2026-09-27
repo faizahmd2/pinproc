@@ -93,8 +93,7 @@ func (p *Provider) Ask(ctx context.Context, state any, questions map[string]deci
 
 	writeDone := make(chan error, 1)
 	go func() {
-		_, werr := stdin.Write(append(payload, '
-'))
+		_, werr := stdin.Write(append(payload, '\n'))
 		if cerr := stdin.Close(); werr == nil {
 			werr = cerr
 		}
