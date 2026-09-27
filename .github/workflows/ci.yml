@@ -40,8 +40,8 @@ jobs:
 
       - name: Smoke install and purge
         run: |
-          CORE=dist/pinproc_0.0.0_amd64.deb
-          PROVIDER=dist/pinproc-provider-jev_0.0.0_amd64.deb
+          CORE=./dist/pinproc_0.0.0_amd64.deb
+          PROVIDER=./dist/pinproc-provider-jev_0.0.0_amd64.deb
           sudo apt install -y "$CORE" "$PROVIDER"
           test -x /usr/bin/pinproc
           test -x /usr/libexec/pinproc/providers/jev
