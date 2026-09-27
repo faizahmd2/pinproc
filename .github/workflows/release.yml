@@ -49,13 +49,20 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -trimpath             -ldflags "-s -w -X main.version=$VERSION -X main.commit=$GITHUB_SHA -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"             -o "dist/pinproc_linux_$GOARCH" ./cmd/diagnos
+          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -trimpath \
+            -ldflags "-s -w -X main.version=$VERSION -X main.commit=$GITHUB_SHA -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "dist/pinproc_linux_$GOARCH" ./cmd/diagnos
       - name: Build Debian package
         env:
           VERSION: ${{ github.ref_name }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          NFPM_BINARY="$PWD/dist/pinproc_linux_$GOARCH"             VERSION="$VERSION" GOARCH="$GOARCH"             "$(go env GOPATH)/bin/nfpm"             --config packaging/nfpm.yaml             --packager deb             --target "dist/pinproc_${VERSION}_${GOARCH}.deb"
+          NFPM_BINARY="$PWD/dist/pinproc_linux_$GOARCH" \
+            VERSION="$VERSION" GOARCH="$GOARCH" \
+            "$(go env GOPATH)/bin/nfpm" \
+            --config packaging/nfpm.yaml \
+            --packager deb \
+            --target "dist/pinproc_${VERSION}_${GOARCH}.deb"
       - name: Inspect package
         env:
           VERSION: ${{ github.ref_name }}
@@ -69,13 +76,14 @@ jobs:
           name: pinproc-${{ matrix.goarch }}
           path: |
             dist/pinproc_linux_${{ matrix.goarch }}
-            dist/pinproc_${{ github.ref_name }}_${{ matrix.goarch }}.deb
+            dist/pinproc_${{ github.ref_name }}_amd64.deb
 
   publish:
     needs: package
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -96,4 +104,10 @@ jobs:
           VERSION: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$VERSION"             release/pinproc_amd64.deb             release/pinproc_arm64.deb             release/checksums.txt             release/install.sh             --title "$VERSION"             --generate-notes
+          gh release create "$VERSION" \
+            release/pinproc_amd64.deb \
+            release/pinproc_arm64.deb \
+            release/checksums.txt \
+            release/install.sh \
+            --title "$VERSION" \
+            --generate-notes
