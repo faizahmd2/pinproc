@@ -3,9 +3,7 @@ package procfs
 import "testing"
 
 func TestParseNetSNMP(t *testing.T) {
-	in := []byte("Tcp: RtoAlgorithm RtoMin ActiveOpens RetransSegs InErrs OutRsts
-Tcp: 1 200 10 12 2 3
-")
+	in := []byte("Tcp: RtoAlgorithm RtoMin ActiveOpens RetransSegs InErrs OutRsts\nTcp: 1 200 10 12 2 3\n")
 	got, err := ParseNetSNMP(in)
 	if err != nil {
 		t.Fatal(err)
@@ -16,9 +14,7 @@ Tcp: 1 200 10 12 2 3
 }
 
 func TestParseNetStat(t *testing.T) {
-	in := []byte("TcpExt: ListenOverflows ListenDrops
-TcpExt: 7 2
-")
+	in := []byte("TcpExt: ListenOverflows ListenDrops\nTcpExt: 7 2\n")
 	got, err := ParseNetStat(in)
 	if err != nil {
 		t.Fatal(err)
@@ -29,10 +25,7 @@ TcpExt: 7 2
 }
 
 func TestParseSockStat(t *testing.T) {
-	in := []byte("sockets: used 14
-TCP: inuse 8 orphan 1 tw 3 alloc 10 mem 2
-UDP: inuse 2
-")
+	in := []byte("sockets: used 14\nTCP: inuse 8 orphan 1 tw 3 alloc 10 mem 2\nUDP: inuse 2\n")
 	got, err := ParseSockStat(in)
 	if err != nil {
 		t.Fatal(err)
@@ -43,10 +36,8 @@ UDP: inuse 2
 }
 
 func TestParseTCPTable(t *testing.T) {
-	in := []byte("  sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode ref pointer
-" +
-		"   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  100 0 12345 1 0000000000000000 100 0 0 10 0
-")
+	in := []byte("  sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode ref pointer\n" +
+		"   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  100 0 12345 1 0000000000000000 100 0 0 10 0\n")
 	got := ParseTCPTable(in)
 	if len(got) != 1 {
 		t.Fatalf("entries=%d", len(got))
