@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/faizahmd2/pinproc/internal/config"
 	"github.com/faizahmd2/pinproc/internal/provider"
 	"github.com/spf13/cobra"
 )
 
+// newProviderCmd exposes metadata about separately installed AI providers.
 func newProviderCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "provider",
@@ -38,7 +38,8 @@ func newProviderListCmd() *cobra.Command {
 				if provider.BinaryInstalled(m, provider.BinaryDir) {
 					status = "ready"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-24s %s\n", m.ID, m.Name, status)
+				fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-24s %s
+", m.ID, m.Name, status)
 			}
 			return nil
 		},
@@ -55,11 +56,17 @@ func newProviderShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "ID: %s\nName: %s\nProtocol: %d\nExecutable: %s\n", m.ID, m.Name, m.ProtocolVersion, m.Executable)
+			fmt.Fprintf(cmd.OutOrStdout(), "ID: %s
+Name: %s
+Protocol: %d
+Executable: %s
+", m.ID, m.Name, m.ProtocolVersion, m.Executable)
 			if m.Description != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Description: %s\n", m.Description)
+				fmt.Fprintf(cmd.OutOrStdout(), "Description: %s
+", m.Description)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Binary: %s\n", m.BinaryPath(provider.BinaryDir))
+			fmt.Fprintf(cmd.OutOrStdout(), "Binary: %s
+", m.BinaryPath(provider.BinaryDir))
 			if _, err := os.Stat(m.BinaryPath(provider.BinaryDir)); err != nil {
 				fmt.Fprintln(cmd.OutOrStdout(), "Status: unavailable")
 			} else {
@@ -75,7 +82,8 @@ func newProviderShowCmd() *cobra.Command {
 				if s.Required {
 					required = "required"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "  %-20s %-8s %s\n", s.Key, s.Type, required)
+				fmt.Fprintf(cmd.OutOrStdout(), "  %-20s %-8s %s
+", s.Key, s.Type, required)
 			}
 			return nil
 		},
@@ -102,11 +110,13 @@ func newAIStatusCmd() *cobra.Command {
 			}
 			m, err := provider.Find(cfg.AI.Provider)
 			if err != nil || !provider.BinaryInstalled(m, provider.BinaryDir) {
-				fmt.Fprintf(cmd.OutOrStdout(), "AI: configured (%s), provider unavailable\n", cfg.AI.Provider)
+				fmt.Fprintf(cmd.OutOrStdout(), "AI: configured (%s), provider unavailable
+", cfg.AI.Provider)
 				fmt.Fprintln(cmd.OutOrStdout(), "Decision mode: deterministic rules")
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "AI: configured (%s)\n", m.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "AI: configured (%s)
+", m.Name)
 			fmt.Fprintln(cmd.OutOrStdout(), "Decision mode: configured provider")
 			return nil
 		},
