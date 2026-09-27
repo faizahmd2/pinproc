@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/faizahmd2/pinproc/internal/callback"
 	"github.com/faizahmd2/pinproc/internal/capability"
 	"github.com/faizahmd2/pinproc/internal/config"
 	"github.com/faizahmd2/pinproc/internal/contract"
@@ -26,24 +25,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type triggerRequest struct {
-	Hint      string             `json:"hint,omitempty"`
-	Dimension contract.Dimension `json:"dimension,omitempty"`
-	Budget    string             `json:"budget,omitempty"`
-	Trigger   string             `json:"trigger,omitempty"`
-	NoAI      bool               `json:"no_ai,omitempty"`
+const (
+	investigateWait = 30 * time.Second
+	reportPendingMax = 2 * time.Minute
+)
+
+type investigateRequest struct {
+	Hint string
+	Dimension contract.Dimension
+}
+
+type investigationResult struct {
+	Investigation *contract.Investigation
+	Err error
 }
 
 type nativeServer struct {
-	mu     sync.Mutex
-	cfg    *config.Config
+	mu sync.Mutex
+	cfg *config.Config
 	report string
 }
 
 func newServeCmd() *cobra.Command {
 	var listen string
 	return &cobra.Command{
-		Use:   "serve",
+		Use: "serve",
 		Short: "run the local inspection service",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load(cfgPath)
@@ -56,12 +62,15 @@ func newServeCmd() *cobra.Command {
 			if listen == "" {
 				listen = "127.0.0.1:8080"
 			}
-			dir, err := config.ResolveOutputDirectory(cfg.Output.Directory)
+			dir, err := config.ResolveOutputDirectory(cfg.Service.DataDirectory)
 			if err != nil {
 				return err
 			}
+			if err := report.MigrateLegacy(dir); err != nil {
+				return fmt.Errorf("prepare report storage: %w", err)
+			}
 			if err := report.EnsureWritable(dir); err != nil {
-				return fmt.Errorf("output directory unavailable: %w", err)
+				return fmt.Errorf("data directory unavailable: %w", err)
 			}
 			if err := recoverServiceState(dir); err != nil {
 				logger.Warn("could not recover previous inspection state", "error", err)
@@ -75,18 +84,17 @@ func newServeCmd() *cobra.Command {
 
 			s := &nativeServer{cfg: cfg, report: filepath.Clean(dir)}
 			mux := http.NewServeMux()
-			mux.HandleFunc("/healthz", s.handleHealth)
-			mux.HandleFunc("/status", s.handleStatus)
-			mux.HandleFunc("/trigger", s.handleTrigger)
+			mux.HandleFunc("/health", s.handleHealth)
+			mux.HandleFunc("/investigate", s.handleInvestigate)
 			mux.HandleFunc("/report", s.handleReport)
 
 			srv := &http.Server{
-				Addr:              listen,
-				Handler:           mux,
+				Addr: listen,
+				Handler: mux,
 				ReadHeaderTimeout: 5 * time.Second,
-				ReadTimeout:       10 * time.Second,
-				WriteTimeout:      10 * time.Minute,
-				IdleTimeout:       60 * time.Second,
+				ReadTimeout: 10 * time.Second,
+				WriteTimeout: 35 * time.Second,
+				IdleTimeout: 60 * time.Second,
 			}
 			logger.Info("pinproc service started", "addr", listen, "report_dir", dir)
 			return srv.ListenAndServe()
@@ -105,204 +113,261 @@ func recoverServiceState(dir string) error {
 	if st.Status != report.StatusRunning {
 		return nil
 	}
-	reason := "service restarted while an inspection was running"
-	if st.ID != "" {
-		reason = fmt.Sprintf("service restarted while inspection %s was running", st.ID)
+	started := time.Now()
+	if st.StartedAt != nil {
+		started = *st.StartedAt
 	}
-	_ = report.WriteFailure(dir, st.ID, st.Host, st.Trigger, "", contract.Budget{}, reason, contract.StopError)
+	reason := "service restarted while an inspection was running"
+	inv := report.Failure(started, "", reason, contract.StopError)
+	if err := report.Write(inv, dir); err != nil {
+		return err
+	}
 	return report.FailState(dir, report.StatusInterrupted, reason)
 }
 
 func (s *nativeServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.NotFound(w, r)
 		return
 	}
 	writeHTTPJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "pinproc"})
 }
 
-func (s *nativeServer) handleStatus(w http.ResponseWriter, r *http.Request) {
-	if !authorized(r, s.cfg.Server.APIKey) {
-		writeHTTPJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
-		return
-	}
+func (s *nativeServer) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		http.NotFound(w, r)
 		return
 	}
-	st, err := report.ReadState(s.report)
-	if err != nil {
-		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "error": err.Error()})
-		return
-	}
-	code := http.StatusOK
-	if st.Status == report.StatusRunning {
-		code = http.StatusAccepted
-	}
-	writeHTTPJSON(w, code, st)
-}
-
-func (s *nativeServer) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	if !authorized(r, s.cfg.Server.APIKey) {
 		writeHTTPJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
 		return
 	}
-	if r.Method != http.MethodPost {
-		writeHTTPJSON(w, http.StatusMethodNotAllowed, map[string]any{"status": "error", "message": "only POST /trigger starts an inspection"})
-		return
-	}
 
-	req, err := parseTriggerRequest(w, r)
+	req, err := parseInvestigateRequest(r)
 	if err != nil {
 		writeHTTPJSON(w, http.StatusBadRequest, map[string]any{"status": "error", "message": err.Error()})
 		return
-	}
-	if req.Budget == "" {
-		req.Budget = s.cfg.Engine.Budget
-	}
-	if req.Budget == "" {
-		req.Budget = "normal"
-	}
-	b, err := budget(req.Budget)
-	if err != nil {
-		writeHTTPJSON(w, http.StatusBadRequest, map[string]any{"status": "error", "message": err.Error()})
-		return
-	}
-	if req.Trigger == "" {
-		req.Trigger = "http"
 	}
 
 	if !s.mu.TryLock() {
-		st, _ := report.ReadState(s.report)
-		writeHTTPJSON(w, http.StatusConflict, map[string]any{
-			"status":  "running",
-			"id":      st.ID,
-			"message": "inspection already happening; wait for it to finish",
+		writeHTTPJSON(w, http.StatusAccepted, map[string]any{
+			"status": "processing",
+			"message": "An investigation is already in progress.",
 		})
 		return
 	}
 
-	id := fmt.Sprintf("inv-%d", time.Now().UnixNano())
-	host := localHostName()
-	if err := report.StartState(s.report, id, host, req.Trigger); err != nil {
+	started := time.Now()
+	if err := report.StartState(s.report, started); err != nil {
 		s.mu.Unlock()
-		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": "unable to persist inspection state: " + err.Error()})
+		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": "Unable to start investigation: " + err.Error()})
 		return
 	}
 
-	logger.Info("inspection accepted", "id", id, "trigger", req.Trigger, "budget", req.Budget)
-	writeHTTPJSON(w, http.StatusAccepted, map[string]any{
-		"id": id, "status": "running", "status_url": "/status", "report_url": "/report",
-	})
-	go s.runAsync(id, req, b)
+	resultCh := make(chan investigationResult, 1)
+	go s.runAsync(started, req, resultCh)
+
+	timer := time.NewTimer(investigateWait)
+	defer timer.Stop()
+	select {
+	case result := <-resultCh:
+		if result.Investigation == nil {
+			writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{
+				"status": "failed",
+				"message": "Investigation failed before a report could be generated. Use GET /report for details.",
+			})
+			return
+		}
+		if result.Err != nil {
+			writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{
+				"status": "failed",
+				"message": "Investigation failed. The generated error report is included.",
+				"report": result.Investigation,
+			})
+			return
+		}
+		writeHTTPJSON(w, http.StatusOK, result.Investigation)
+	case <-timer.C:
+		writeHTTPJSON(w, http.StatusAccepted, map[string]any{
+			"status": "processing",
+			"message": "Investigation is still running. Use GET /report for the result.",
+		})
+	}
 }
 
-func (s *nativeServer) runAsync(id string, req triggerRequest, b contract.Budget) {
+func (s *nativeServer) runAsync(started time.Time, req investigateRequest, done chan<- investigationResult) {
 	defer s.mu.Unlock()
-	ctx := context.Background()
 
-	progress := func(stage string) {
-		if err := report.UpdateState(s.report, stage); err != nil {
-			logger.Warn("failed to persist inspection progress", "id", id, "stage", stage, "error", err)
+	var result investigationResult
+	fail := func(reason string, cause error) {
+		inv := report.Failure(started, req.Hint, reason, contract.StopError)
+		result.Investigation = inv
+		if err := report.Write(inv, s.report); err != nil {
+			result.Err = fmt.Errorf("%s; error report write failed: %v", reason, err)
+			return
+		}
+		_ = report.FailState(s.report, report.StatusFailed, reason)
+		if cause != nil {
+			result.Err = cause
+		} else {
+			result.Err = fmt.Errorf("%s", reason)
 		}
 	}
-	progress("starting")
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				st, err := report.ReadState(s.report)
-				if err == nil {
-					logger.Info("inspection progress", "id", id, "status", st.Status, "stage", st.Stage)
-				}
-			case <-done:
-				return
-			}
-		}
-	}()
 
 	defer func() {
 		if r := recover(); r != nil {
 			reason := fmt.Sprintf("investigation panic: %v", r)
-			_ = report.WriteFailure(s.report, id, localHostName(), req.Trigger, req.Hint, b, reason, contract.StopError)
-			_ = report.FailState(s.report, report.StatusFailed, reason)
-			logger.Error("inspection panic", "id", id, "panic", r)
+			fail(reason, fmt.Errorf("%s", reason))
+			logger.Error("inspection panic", "panic", r)
 		}
+		done <- result
 	}()
 
+	ctx := context.Background()
 	src := source.NewLocalWithTimeout("/proc", "/sys", 8<<20, s.cfg.Source.ReadTimeout)
 	defer src.Close()
 
-	progress("preparing")
 	reg, err := capability.BuildBuiltin()
 	if err != nil {
-		s.failInspection(id, req, b, err)
+		fail("capability graph unavailable: "+err.Error(), err)
 		return
 	}
 
-	dec, err := makeDecisionProvider(s.cfg, req.NoAI)
+	dec, err := makeDecisionProvider(s.cfg)
 	if err != nil {
-		s.failInspection(id, req, b, err)
+		fail("decision provider unavailable: "+err.Error(), err)
 		return
 	}
 
 	eng := engine.New(engine.Options{
-		Source: src, Registry: reg, Rules: rules.Default(), Decision: dec,
-		Identity: identity.New(src), Budget: b, ParallelWidth: s.cfg.Engine.ParallelWidth,
-		MaxFindings: s.cfg.Report.MaxFindings, DecisionNotice: decisionNotice(s.cfg, req.NoAI),
-		Logger: logger, Progress: progress,
+		Source: src,
+		Registry: reg,
+		Rules: rules.Default(),
+		Decision: dec,
+		Identity: identity.New(src),
+		Budget: contract.BudgetNormal(),
+		ParallelWidth: 3,
+		MaxFindings: s.cfg.Report.MaxFindings,
+		DecisionNotice: decisionNotice(s.cfg),
+		Logger: logger,
 	})
+
 	inv, err := eng.Run(ctx, engine.Request{
-		ID: id, Host: localHostName(), Trigger: req.Trigger, Hint: req.Hint, Dimension: req.Dimension,
+		ID: fmt.Sprintf("inv-%d", started.UnixNano()),
+		Host: localHostName(),
+		Trigger: "http",
+		Hint: req.Hint,
+		Dimension: req.Dimension,
 	})
 	if err != nil {
-		s.failInspection(id, req, b, err)
+		fail("investigation engine failed: "+err.Error(), err)
 		return
 	}
 
-	progress("narrating")
+	if inv.StartedAt.IsZero() {
+		inv.StartedAt = started
+	}
+	inv.IncidentCheckedAt = started
+
 	if s.cfg.Narrator.Enabled {
-		if text, ne := narrator.NewRules().Narrate(ctx, inv); ne == nil && narrator.Validate(inv, text) == nil {
-			inv.Narrative = text
+		if narrative, ne := narrator.NewRules().Narrate(ctx, inv); ne == nil && narrator.Validate(inv, narrative) == nil {
+			inv.Narrative = narrative
 		}
 	}
 
-	progress("writing_report")
 	if err := report.Write(inv, s.report); err != nil {
-		_ = report.FailState(s.report, report.StatusFailed, "report write failed: "+err.Error())
-		logger.Error("inspection report write failed", "id", id, "error", err)
+		result.Investigation = inv
+		result.Err = fmt.Errorf("report write failed: %w", err)
 		return
 	}
 	if err := report.FinishState(s.report); err != nil {
-		_ = report.FailState(s.report, report.StatusFailed, "could not persist done state: "+err.Error())
-		logger.Error("failed to mark inspection done", "id", id, "error", err)
+		reason := "could not persist done state: " + err.Error()
+		_ = report.FailState(s.report, report.StatusFailed, reason)
+		result.Investigation = inv
+		result.Err = fmt.Errorf("%s", reason)
 		return
 	}
-	logger.Info("inspection done", "id", id)
+
+	result.Investigation = inv
+	if s.cfg.Callback.Enabled && strings.TrimSpace(s.cfg.Callback.URL) != "" {
+		payload := *inv
+		go func() {
+			if err := callback.Post(context.Background(), s.cfg.Callback.URL, s.cfg.Callback.Timeout, &payload); err != nil {
+				logger.Warn("report callback failed", "error", err)
+			}
+		}()
+	}
 }
 
-func (s *nativeServer) failInspection(id string, req triggerRequest, b contract.Budget, err error) {
-	reason := err.Error()
-	_ = report.WriteFailure(s.report, id, "localhost", req.Trigger, req.Hint, b, reason, contract.StopError)
-	_ = report.FailState(s.report, report.StatusFailed, reason)
-	logger.Error("inspection failed", "id", id, "error", err)
+func parseInvestigateRequest(r *http.Request) (investigateRequest, error) {
+	var out investigateRequest
+	query := r.URL.Query()
+	out.Hint = strings.TrimSpace(query.Get("hint"))
+	if len(out.Hint) > 2048 {
+		return out, fmt.Errorf("hint is too long; maximum is 2048 characters")
+	}
+	if dim := strings.TrimSpace(query.Get("dimension")); dim != "" {
+		switch contract.Dimension(dim) {
+		case contract.DimensionCPU, contract.DimensionMemory, contract.DimensionIO,
+			contract.DimensionNetwork, contract.DimensionScheduling, contract.DimensionFilesystem,
+			contract.DimensionLimits:
+			out.Dimension = contract.Dimension(dim)
+		default:
+			return out, fmt.Errorf("unsupported dimension %q", dim)
+		}
+	}
+	return out, nil
 }
 
-func parseTriggerRequest(w http.ResponseWriter, r *http.Request) (triggerRequest, error) {
-	var req triggerRequest
-	if r.Body == nil {
-		return req, nil
+func (s *nativeServer) handleReport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
 	}
-	defer r.Body.Close()
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		return req, fmt.Errorf("invalid JSON body")
+	if !authorized(r, s.cfg.Server.APIKey) {
+		writeHTTPJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
+		return
 	}
-	return req, nil
+	st, err := report.ReadState(s.report)
+	if err != nil && !os.IsNotExist(err) {
+		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
+		return
+	}
+	if err == nil && st.Status == report.StatusRunning {
+		if st.StartedAt != nil && time.Since(*st.StartedAt) >= reportPendingMax {
+			inv, reportErr := report.Read(s.report)
+			if reportErr == nil {
+				writeHTTPJSON(w, http.StatusOK, map[string]any{
+					"status": "stale",
+					"message": "The current investigation has exceeded the pending window. Returning the last completed report.",
+					"report": inv,
+				})
+				return
+			}
+			writeHTTPJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"status": "processing",
+				"message": "The current investigation is still running and no previous report is available.",
+			})
+			return
+		}
+		writeHTTPJSON(w, http.StatusAccepted, map[string]any{
+			"status": "processing",
+			"message": "An investigation is still in progress.",
+			"started_at": st.StartedAt,
+		})
+		return
+	}
+
+	inv, err := report.Read(s.report)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeHTTPJSON(w, http.StatusNotFound, map[string]any{"status": "not_found", "message": "No investigation report exists yet."})
+			return
+		}
+		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
+		return
+	}
+	writeHTTPJSON(w, http.StatusOK, inv)
 }
 
 func authorized(r *http.Request, key string) bool {
@@ -312,7 +377,12 @@ func authorized(r *http.Request, key string) bool {
 	if isLoopback(r) {
 		return true
 	}
-	return r.URL.Query().Get("key") == key
+	const prefix = "Bearer "
+	value := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(value, prefix) {
+		return strings.TrimSpace(strings.TrimPrefix(value, prefix)) == key
+	}
+	return false
 }
 
 func isLoopback(r *http.Request) bool {
@@ -324,49 +394,11 @@ func isLoopback(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func (s *nativeServer) handleReport(w http.ResponseWriter, r *http.Request) {
-	if !authorized(r, s.cfg.Server.APIKey) {
-		writeHTTPJSON(w, http.StatusUnauthorized, map[string]any{"status": "unauthorized"})
-		return
+func localHostName() string {
+	if host, err := os.Hostname(); err == nil && strings.TrimSpace(host) != "" {
+		return strings.TrimSpace(host)
 	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	st, _ := report.ReadState(s.report)
-	if st.Status == report.StatusRunning {
-		writeHTTPJSON(w, http.StatusAccepted, st)
-		return
-	}
-	dir, err := report.LatestDir(s.report)
-	if err != nil {
-		if os.IsNotExist(err) {
-			writeHTTPJSON(w, http.StatusNotFound, map[string]any{"status": "not_found", "message": "no completed inspection report available; POST /trigger first"})
-			return
-		}
-		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
-		return
-	}
-	format := strings.ToLower(r.URL.Query().Get("format"))
-	if format == "json" {
-		data, err := os.ReadFile(filepath.Join(dir, "investigation.json"))
-		if err != nil {
-			writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(data)
-		return
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "report.md"))
-	if err != nil {
-		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	return "localhost"
 }
 
 func writeHTTPJSON(w http.ResponseWriter, status int, value any) {

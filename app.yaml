@@ -1,6 +1,6 @@
-# pinproc configuration.
-# The agent is local-only: it reads /proc, /sys, cgroups and related kernel state.
-# Jev is the V2 structured decision provider; rules remain the deterministic fallback.
+# pinproc V2 configuration.
+# The service is Linux-only and reads the local OS directly.
+# End users normally only need the AI key and optional callback.
 
 app:
   name: pinproc
@@ -8,16 +8,12 @@ app:
 
 server:
   listen: 127.0.0.1:8080
+  api_key: ""
 
 service:
-  user: ""
-  group: ""
+  user: pinproc
+  group: pinproc
   data_directory: /var/lib/pinproc
-
-engine:
-  budget: normal
-  sample_window: 1s
-  parallel_width: 3
 
 decision:
   provider: jev
@@ -35,5 +31,7 @@ source:
 report:
   max_findings: 5
 
-output:
-  directory: /var/lib/pinproc/reports
+callback:
+  enabled: false
+  url: ""
+  timeout: 5s

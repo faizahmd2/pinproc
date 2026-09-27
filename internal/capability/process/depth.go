@@ -43,9 +43,12 @@ type FDEntry struct {
 
 // SocketFacts summarizes process socket inodes discovered from fd links.
 type SocketFacts struct {
-	PID    int64
-	Count  uint64
-	Inodes []uint64
+	PID         int64
+	Count       uint64
+	TCPCount    uint64
+	TCPStates   map[string]uint64
+	ListenPorts []int
+	Inodes      []uint64
 }
 
 // Limits returns process descriptor/process-count limits.
@@ -135,10 +138,14 @@ func Files() spec.Capability {
 func Sockets() spec.Capability {
 	return spec.Capability{
 		ID: "process.sockets", Dimension: contract.DimensionNetwork, Level: contract.L4Mechanism, Kind: specKindSnapshot(),
-		Accepts: contract.EntityProcess, Cost: contract.CostMedium, Summary: "process socket descriptor ownership and inode inventory",
+		Accepts: contract.EntityProcess, Cost: contract.CostMedium, Summary: "process-owned sockets with TCP connection states and listener ports",
 		LeadsTo: nil, Reads: func(e contract.Entity, _ contract.Facts) []source.Read {
 			p := depthEntityPID(e)
-			return []source.Read{{Key: "proc.fd", Path: "/proc/" + p + "/fd/*", Kind: source.ReadGlob, MaxBytes: 4096, Optional: true}}
+			return []source.Read{
+				{Key: "proc.fd", Path: "/proc/" + p + "/fd/*", Kind: source.ReadGlob, MaxBytes: 4096, Optional: true},
+				{Key: "proc.tcp", Path: "/proc/net/tcp", Kind: source.ReadFile, MaxBytes: 2 << 20, Optional: true},
+				{Key: "proc.tcp6", Path: "/proc/net/tcp6", Kind: source.ReadFile, MaxBytes: 2 << 20, Optional: true},
+			}
 		}, Parse: parseSockets}
 }
 
@@ -187,8 +194,9 @@ func parseIO(in spec.ParseInput) (contract.Evidence, error) {
 func parseFiles(in spec.ParseInput) (contract.Evidence, error) {
 	pid := depthEntityPID(in.Scope)
 	rows := []FDEntry{}
-	var reg, socks, pipes, dev, deleted, deletedBytes uint64
+	var total, reg, socks, pipes, dev, deleted, deletedBytes uint64
 	for path, data := range depthIndex(in.Sample.T1.Reads["proc.fd"]) {
+		total++
 		fd := fdNumber(path)
 		target := string(data)
 		kind := "other"
@@ -216,12 +224,12 @@ func parseFiles(in spec.ParseInput) (contract.Evidence, error) {
 			rows = append(rows, FDEntry{FD: fd, Target: target, Kind: kind})
 		}
 	}
-	f := FileFacts{PID: parsePID(pid), Total: reg + socks + pipes + dev, Samples: rows, Regular: reg, Sockets: socks, Pipes: pipes, Devices: dev, Deleted: deleted, DeletedBytes: deletedBytes}
-	return contract.Evidence{ID: "ev-process-" + pid + "-files", Capability: "process.files", Entity: contract.Entity{Kind: contract.EntityProcess, ID: "pid:" + pid}, Dimension: contract.DimensionFilesystem, Level: contract.L3Execution, CollectedAt: in.Sample.T1.At, Facts: f, Observations: []contract.Observation{{Key: "proc.fd_total", Value: float64(f.Total), Unit: "count"}, {Key: "proc.fd_sockets", Value: float64(socks), Unit: "count"}, {Key: "proc.fd_pipes", Value: float64(pipes), Unit: "count"}, {Key: "proc.fd_regular", Value: float64(reg), Unit: "count"}, {Key: "proc.fd_deleted", Value: float64(deleted), Unit: "count"}, {Key: "proc.fd_deleted_bytes", Value: float64(deletedBytes), Unit: "bytes"}}, Sources: []string{"/proc/" + pid + "/fd/*"}, Verify: []string{"ls -l /proc/" + pid + "/fd"}}, nil
+	f := FileFacts{PID: parsePID(pid), Total: total, Samples: rows, Regular: reg, Sockets: socks, Pipes: pipes, Devices: dev, Deleted: deleted, DeletedBytes: deletedBytes}
+	return contract.Evidence{ID: "ev-process-" + pid + "-files", Capability: "process.files", Entity: contract.Entity{Kind: contract.EntityProcess, ID: "pid:" + pid}, Dimension: contract.DimensionFilesystem, Level: contract.L3Execution, CollectedAt: in.Sample.T1.At, Facts: f, Observations: []contract.Observation{{Key: "proc.fd_total", Value: float64(f.Total), Unit: "count"}, {Key: "proc.fd_other", Value: float64(f.Total - f.Regular - f.Sockets - f.Pipes - f.Devices), Unit: "count"}, {Key: "proc.fd_sockets", Value: float64(socks), Unit: "count"}, {Key: "proc.fd_pipes", Value: float64(pipes), Unit: "count"}, {Key: "proc.fd_regular", Value: float64(reg), Unit: "count"}, {Key: "proc.fd_deleted", Value: float64(deleted), Unit: "count"}, {Key: "proc.fd_deleted_bytes", Value: float64(deletedBytes), Unit: "bytes"}}, Sources: []string{"/proc/" + pid + "/fd/*"}, Verify: []string{"ls -l /proc/" + pid + "/fd"}}, nil
 }
 func parseSockets(in spec.ParseInput) (contract.Evidence, error) {
 	pid := depthEntityPID(in.Scope)
-	f := SocketFacts{PID: parsePID(pid)}
+	f := SocketFacts{PID: parsePID(pid), TCPStates: map[string]uint64{}}
 	for _, r := range in.Sample.T1.Reads["proc.fd"] {
 		t := string(r.Data)
 		if !strings.HasPrefix(t, "socket:[") {
@@ -229,13 +237,49 @@ func parseSockets(in spec.ParseInput) (contract.Evidence, error) {
 		}
 		x := strings.TrimSuffix(strings.TrimPrefix(t, "socket:["), "]")
 		v, e := strconv.ParseUint(x, 10, 64)
-		if e == nil {
-			f.Inodes = append(f.Inodes, v)
-			f.Count++
+		if e != nil {
+			continue
+		}
+		f.Inodes = append(f.Inodes, v)
+		f.Count++
+	}
+	owned := map[uint64]bool{}
+	for _, inode := range f.Inodes {
+		owned[inode] = true
+	}
+	for _, data := range [][]byte{depthRaw(in.Sample.T1, "proc.tcp"), depthRaw(in.Sample.T1, "proc.tcp6")} {
+		for _, entry := range procfs.ParseTCPTable(data) {
+			if !owned[entry.Inode] {
+				continue
+			}
+			f.TCPCount++
+			f.TCPStates[entry.State]++
+			if entry.State == "LISTEN" {
+				f.ListenPorts = append(f.ListenPorts, entry.LocalPort)
+			}
 		}
 	}
 	sort.Slice(f.Inodes, func(i, j int) bool { return f.Inodes[i] < f.Inodes[j] })
-	return contract.Evidence{ID: "ev-process-" + pid + "-sockets", Capability: "process.sockets", Entity: contract.Entity{Kind: contract.EntityProcess, ID: "pid:" + pid}, Dimension: contract.DimensionNetwork, Level: contract.L4Mechanism, CollectedAt: in.Sample.T1.At, Facts: f, Observations: []contract.Observation{{Key: "proc.socket_count", Value: float64(f.Count), Unit: "count"}}, Sources: []string{"/proc/" + pid + "/fd/*"}, Verify: []string{"ls -l /proc/" + pid + "/fd"}}, nil
+	sort.Ints(f.ListenPorts)
+	if len(f.ListenPorts) > 16 {
+		f.ListenPorts = f.ListenPorts[:16]
+	}
+	obs := []contract.Observation{
+		{Key: "proc.socket_count", Value: float64(f.Count), Unit: "count"},
+		{Key: "proc.tcp_socket_count", Value: float64(f.TCPCount), Unit: "count"},
+	}
+	states := make([]string, 0, len(f.TCPStates))
+	for state := range f.TCPStates {
+		states = append(states, state)
+	}
+	sort.Strings(states)
+	for _, state := range states {
+		obs = append(obs, contract.Observation{Key: "proc.tcp_" + strings.ToLower(state), Value: float64(f.TCPStates[state]), Unit: "count"})
+	}
+	for _, port := range f.ListenPorts {
+		obs = append(obs, contract.Observation{Key: "proc.tcp_listen_port", Value: float64(port), Unit: "port"})
+	}
+	return contract.Evidence{ID: "ev-process-" + pid + "-sockets", Capability: "process.sockets", Entity: contract.Entity{Kind: contract.EntityProcess, ID: "pid:" + pid}, Dimension: contract.DimensionNetwork, Level: contract.L4Mechanism, CollectedAt: in.Sample.T1.At, Facts: f, Observations: obs, Sources: []string{"/proc/" + pid + "/fd/*", "/proc/net/tcp", "/proc/net/tcp6"}, Verify: []string{"ls -l /proc/" + pid + "/fd", "cat /proc/net/tcp", "cat /proc/net/tcp6"}}, nil
 }
 func parseMaps(in spec.ParseInput) (contract.Evidence, error) {
 	pid := depthEntityPID(in.Scope)

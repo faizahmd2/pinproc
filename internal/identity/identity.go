@@ -7,8 +7,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -176,7 +178,10 @@ func (r *Resolver) ResolveMachine(ctx context.Context) (contract.MachineIdentity
 		Architecture: runtime.GOARCH,
 	}
 	if r.src.Name() == "local" {
-		m.PrimaryIP = primaryIPv4()
+		if hostname, he := os.Hostname(); he == nil && strings.TrimSpace(hostname) != "" {
+			m.Hostname = strings.TrimSpace(hostname)
+		}
+		m.PrimaryIP = primaryIP()
 	}
 	for _, line := range strings.Split(string(first(snap, "os_release")), "\n") {
 		if strings.HasPrefix(line, "PRETTY_NAME=") {
@@ -392,11 +397,13 @@ func inferPaths(cmd []string, cwd, exe string) ([]string, []string) {
 	return logs, cfgs
 }
 
-func primaryIPv4() string {
+func primaryIP() string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return ""
 	}
+	sort.Slice(ifaces, func(i, j int) bool { return ifaces[i].Name < ifaces[j].Name })
+	var publicIPs, internalIPs, linkLocalIPs []string
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
@@ -405,6 +412,7 @@ func primaryIPv4() string {
 		if err != nil {
 			continue
 		}
+		ips := make([]string, 0, len(addrs))
 		for _, addr := range addrs {
 			var ip net.IP
 			switch v := addr.(type) {
@@ -415,12 +423,50 @@ func primaryIPv4() string {
 			default:
 				continue
 			}
-			ip = ip.To4()
-			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() {
 				continue
 			}
-			return ip.String()
+			ips = append(ips, ip.String())
+		}
+		sort.Strings(ips)
+		for _, value := range ips {
+			ip := net.ParseIP(value)
+			if ip == nil {
+				continue
+			}
+			if ip.IsGlobalUnicast() && isPublicAddress(ip) {
+				publicIPs = append(publicIPs, value)
+				continue
+			}
+			if ip.IsGlobalUnicast() && !ip.IsLinkLocalUnicast() {
+				internalIPs = append(internalIPs, value)
+				continue
+			}
+			if ip.IsLinkLocalUnicast() {
+				linkLocalIPs = append(linkLocalIPs, value)
+			}
 		}
 	}
+	if len(publicIPs) > 0 {
+		return publicIPs[0]
+	}
+	if len(internalIPs) > 0 {
+		return internalIPs[0]
+	}
+	if len(linkLocalIPs) > 0 {
+		return linkLocalIPs[0]
+	}
 	return ""
+}
+
+func isPublicAddress(ip net.IP) bool {
+	if ip == nil || !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
+		return false
+	}
+	// IPv4 carrier-grade NAT (100.64.0.0/10) is globally routable inside providers
+	// but is not a public address owned on the public Internet.
+	if v4 := ip.To4(); v4 != nil {
+		return !(v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127)
+	}
+	return true
 }

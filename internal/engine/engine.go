@@ -103,6 +103,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		Trigger:       req.Trigger,
 		Hint:          req.Hint,
 		StartedAt:     start,
+		IncidentCheckedAt: start,
 		Budget:        e.opt.Budget,
 		Facts:         facts,
 		Evidence:      []contract.Evidence{},
@@ -833,9 +834,13 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 	if inv == nil {
 		return s
 	}
-
 	s.CPUs = inv.Machine.CPUs
 	s.MemoryTotalBytes = inv.Machine.MemTotal
+
+	diskRead := map[string]float64{}
+	diskWrite := map[string]float64{}
+	diskUtil := map[string]float64{}
+	diskAwait := map[string]float64{}
 
 	for _, ev := range inv.Evidence {
 		for _, obs := range ev.Observations {
@@ -854,8 +859,59 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 				s.MemoryUsedPct = 100 - obs.Value
 			case "mem.swap_used_pct":
 				s.SwapUsedPct = obs.Value
+			case "net.rx_bps":
+				s.NetworkRxBPS = obs.Value
+			case "net.tx_bps":
+				s.NetworkTxBPS = obs.Value
+			case "tcp.retrans_rate":
+				s.NetworkRetransmitsPerSec = obs.Value
+			case "socket.used":
+				s.SocketsUsed = uint64(obs.Value)
+			case "tcp.inuse":
+				s.TCPInUse = uint64(obs.Value)
+			case "tcp.orphan":
+				s.TCPOrphan = uint64(obs.Value)
+			case "tcp.alloc":
+				s.TCPAlloc = uint64(obs.Value)
+			case "tcp.time_wait":
+				s.TCPTimeWait = uint64(obs.Value)
+			case "tcp.listen_overflow_delta":
+				s.TCPListenOverflow = uint64(obs.Value)
+			default:
+				if strings.HasPrefix(obs.Key, "io.") {
+					parts := strings.Split(obs.Key, ".")
+					if len(parts) == 3 {
+						device, metric := parts[1], parts[2]
+						switch metric {
+						case "read_bps":
+							diskRead[device] = obs.Value
+						case "write_bps":
+							diskWrite[device] = obs.Value
+						case "util_pct":
+							diskUtil[device] = obs.Value
+						case "await_ms":
+							diskAwait[device] = obs.Value
+						}
+					}
+				}
 			}
 		}
+	}
+
+	bestDevice := ""
+	bestUtil := -1.0
+	for device, util := range diskUtil {
+		if util > bestUtil {
+			bestUtil = util
+			bestDevice = device
+		}
+	}
+	if bestDevice != "" {
+		s.PrimaryDiskDevice = bestDevice
+		s.DiskReadBPS = diskRead[bestDevice]
+		s.DiskWriteBPS = diskWrite[bestDevice]
+		s.DiskUtilizationPct = diskUtil[bestDevice]
+		s.DiskAwaitMS = diskAwait[bestDevice]
 	}
 
 	var fs syscall.Statfs_t

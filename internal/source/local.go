@@ -358,7 +358,9 @@ func (s *Local) expandGlob(pattern string) ([]string, error) {
 	cur := []string{string(os.PathSeparator)}
 	maxItems := 8192
 	if strings.Contains(pattern, "/fd/") {
-		maxItems = 256
+		// FD inventories are intentionally bounded, but 256 is too small to
+		// diagnose common high-connection services. Keep the cap finite.
+		maxItems = 4096
 	}
 	for i := 1; i < len(parts); i++ {
 		next := make([]string, 0)

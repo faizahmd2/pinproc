@@ -2,7 +2,6 @@ package report
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -20,10 +19,6 @@ const (
 
 type InspectionState struct {
 	Status     InspectionStatus `json:"status"`
-	ID         string           `json:"id,omitempty"`
-	Host       string           `json:"host,omitempty"`
-	Trigger    string           `json:"trigger,omitempty"`
-	Stage      string           `json:"stage,omitempty"`
 	StartedAt  *time.Time       `json:"started_at,omitempty"`
 	UpdatedAt  time.Time        `json:"updated_at"`
 	FinishedAt *time.Time       `json:"finished_at,omitempty"`
@@ -54,21 +49,11 @@ func WriteState(root string, s InspectionState) error {
 	return atomic(filepath.Join(root, "state.json"), append(b, '\n'))
 }
 
-func StartState(root, id, host, trigger string) error {
-	now := time.Now()
-	return WriteState(root, InspectionState{
-		Status: StatusRunning, ID: id, Host: host, Trigger: trigger,
-		Stage: "accepted", StartedAt: &now,
-	})
-}
-
-func UpdateState(root, stage string) error {
-	s, err := ReadState(root)
-	if err != nil {
-		return err
+func StartState(root string, startedAt time.Time) error {
+	if startedAt.IsZero() {
+		startedAt = time.Now()
 	}
-	s.Stage = stage
-	return WriteState(root, s)
+	return WriteState(root, InspectionState{Status: StatusRunning, StartedAt: &startedAt})
 }
 
 func FinishState(root string) error {
@@ -78,7 +63,6 @@ func FinishState(root string) error {
 	}
 	now := time.Now()
 	s.Status = StatusDone
-	s.Stage = "done"
 	s.FinishedAt = &now
 	s.Error = ""
 	return WriteState(root, s)
@@ -94,20 +78,7 @@ func FailState(root string, status InspectionStatus, reason string) error {
 	}
 	now := time.Now()
 	s.Status = status
-	s.Stage = "failed"
 	s.FinishedAt = &now
 	s.Error = reason
 	return WriteState(root, s)
-}
-
-func RecoverInterrupted(root string) error {
-	s, err := ReadState(root)
-	if err != nil || s.Status != StatusRunning {
-		return nil
-	}
-	reason := "service restarted while an inspection was running"
-	if s.ID != "" {
-		reason = fmt.Sprintf("service restarted while inspection %s was running", s.ID)
-	}
-	return FailState(root, StatusInterrupted, reason)
 }

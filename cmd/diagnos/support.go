@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -44,10 +43,3 @@ func budget(name string) (contract.Budget, error) {
 	}
 }
 
-func localHostName() string {
-	host, err := os.Hostname()
-	if err != nil || strings.TrimSpace(host) == "" {
-		return "localhost"
-	}
-	return strings.TrimSpace(host)
-}
