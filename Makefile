@@ -37,7 +37,7 @@ package:
 	@test -n "$(VERSION)" || (echo "VERSION is required" && exit 1)
 	mkdir -p dist
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_$(GOARCH) ./cmd/diagnos
-	NFPM_BINARY="$(CURDIR)/dist/pinproc_linux_$(GOARCH)" VERSION="$(VERSION)" GOARCH="$(GOARCH)" go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0 --config packaging/nfpm.yaml --packager deb --target "dist/pinproc_$(VERSION)_$(GOARCH).deb"
+	NFPM_BINARY="$(CURDIR)/dist/pinproc_linux_$(GOARCH)" VERSION="$(VERSION)" GOARCH="$(GOARCH)" go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0 pkg --config packaging/nfpm.yaml --packager deb --target "dist/pinproc_$(VERSION)_$(GOARCH).deb"
 
 release:
 	rm -rf dist
