@@ -13,6 +13,7 @@ license: MIT
 contents:
   - src: ${NFPM_BINARY}
     dst: /usr/bin/pinproc
+    expand: true
     file_info:
       mode: 0755
 
