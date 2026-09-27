@@ -81,8 +81,6 @@ func newSetupServerCmd() *cobra.Command {
 		if cmd.Flags().Changed("listen") { cfg.Server.Listen = strings.TrimSpace(listen) }
 		if clearKey {
 			cfg.Server.APIKey = ""
-		} else if cmd.Flags().Changed("api-key") {
-			return fmt.Errorf("api-key is no longer accepted as a command-line argument; use the interactive prompt or --clear-api-key")
 		} else {
 			reader := bufio.NewReader(cmd.InOrStdin())
 			current := cfg.Server.APIKey
