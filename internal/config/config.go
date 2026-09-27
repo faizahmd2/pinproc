@@ -3,125 +3,105 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-type DecisionConfig struct {
-	Provider string        `yaml:"provider"`
-	BaseURL  string        `yaml:"base_url"`
-	Model    string        `yaml:"model"`
-	APIKey   string        `yaml:"api_key"`
-	Timeout  time.Duration `yaml:"timeout"`
+const (
+	ConfigPath = "/etc/pinproc/config.yaml"
+	DataDirectory = "/var/lib/pinproc"
+	ProviderDir = "/usr/libexec/pinproc/providers"
+	ProviderManifests = "/usr/share/pinproc/providers"
+	ServiceUser = "pinproc"
+	ServiceGroup = "pinproc"
+)
+
+type AIConfig struct {
+	Provider string `yaml:"provider"`
+	Config map[string]string `yaml:"config"`
 }
 
-type SourceConfig struct {
-	ReadTimeout time.Duration `yaml:"read_timeout"`
-}
-
-type NarratorConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
-type ServiceConfig struct {
-	User          string `yaml:"user"`
-	Group         string `yaml:"group"`
-	DataDirectory string `yaml:"data_directory"`
-}
-
+type SourceConfig struct { ReadTimeout time.Duration `yaml:"read_timeout"` }
+type NarratorConfig struct { Enabled bool `yaml:"enabled"` }
 type CallbackConfig struct {
-	Enabled bool          `yaml:"enabled"`
-	URL     string        `yaml:"url"`
+	Enabled bool `yaml:"enabled"`
+	URL string `yaml:"url"`
 	Timeout time.Duration `yaml:"timeout"`
 }
 
 type Config struct {
-	App struct {
-		Name     string `yaml:"name"`
-		LogLevel string `yaml:"log_level"`
-	} `yaml:"app"`
-
-	Decision DecisionConfig `yaml:"decision"`
+	Version int `yaml:"version"`
+	App struct { Name string `yaml:"name"`; LogLevel string `yaml:"log_level"` } `yaml:"app"`
+	AI AIConfig `yaml:"ai"`
 	Narrator NarratorConfig `yaml:"narrator"`
-	Service  ServiceConfig  `yaml:"service"`
-	Source   SourceConfig   `yaml:"source"`
-	Report   struct {
-		MaxFindings int `yaml:"max_findings"`
-	} `yaml:"report"`
-	Server struct {
-		Listen string `yaml:"listen"`
-		APIKey string `yaml:"api_key"`
-	} `yaml:"server"`
+	Source SourceConfig `yaml:"source"`
+	Report struct { MaxFindings int `yaml:"max_findings"` } `yaml:"report"`
+	Server struct { Listen string `yaml:"listen"`; APIKey string `yaml:"api_key"` } `yaml:"server"`
 	Callback CallbackConfig `yaml:"callback"`
 }
 
+var providerIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
 func Load(path string) (*Config, error) {
 	cfg := defaults()
-	if path == "" {
-		path = DiscoverPath()
-	}
+	if path == "" { path = DiscoverPath() }
 	if path != "" {
-		if resolved, err := filepath.Abs(path); err == nil {
-			path = resolved
-		}
+		if resolved, err := filepath.Abs(path); err == nil { path = resolved }
 		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return nil, err
-		}
+		if err != nil { if os.IsNotExist(err) { return &cfg, nil }; return nil, err }
+		if err := yaml.Unmarshal(data, &cfg); err != nil { return nil, err }
 	}
 	normalize(&cfg)
-	applyEnv(&cfg)
-	if err := Validate(&cfg); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
-	}
+	if err := Validate(&cfg); err != nil { return nil, fmt.Errorf("validate config: %w", err) }
 	return &cfg, nil
 }
 
-// DiscoverPath returns the first conventional configuration file.
+func Save(path string, cfg *Config) error {
+	if cfg == nil { return fmt.Errorf("config is nil") }
+	if path == "" { path = ConfigPath }
+	if err := Validate(cfg); err != nil { return fmt.Errorf("validate config: %w", err) }
+	data, err := yaml.Marshal(cfg); if err != nil { return fmt.Errorf("marshal config: %w", err) }
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0750); err != nil { return fmt.Errorf("create config directory: %w", err) }
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp"); if err != nil { return fmt.Errorf("create temporary config: %w", err) }
+	tmpName := tmp.Name(); defer os.Remove(tmpName)
+	if err := tmp.Chmod(0640); err != nil { _ = tmp.Close(); return err }
+	if _, err := tmp.Write(data); err != nil { _ = tmp.Close(); return fmt.Errorf("write temporary config: %w", err) }
+	if err := tmp.Sync(); err != nil { _ = tmp.Close(); return fmt.Errorf("sync temporary config: %w", err) }
+	if err := tmp.Close(); err != nil { return err }
+	if os.Geteuid() == 0 {
+		if g, err := user.LookupGroup(ServiceGroup); err == nil { if gid, err := strconv.Atoi(g.Gid); err == nil { _ = os.Chown(tmpName, 0, gid) } }
+	}
+	if err := os.Rename(tmpName, path); err != nil { return fmt.Errorf("install config: %w", err) }
+	_ = os.Chmod(path, 0640)
+	return nil
+}
+
 func DiscoverPath() string {
-	candidates := []string{"app.yaml", "app.yml", filepath.Join("configs", "app.yaml"), filepath.Join("configs", "app.yml")}
+	candidates := []string{ConfigPath, "config.yaml", "config.yml", "app.yaml", "app.yml"}
 	if executable, err := os.Executable(); err == nil {
-		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-			executable = resolved
-		}
+		if resolved, err := filepath.EvalSymlinks(executable); err == nil { executable = resolved }
 		dir := filepath.Dir(executable)
-		candidates = append(candidates, filepath.Join(dir, "app.yaml"), filepath.Join(dir, "app.yml"))
+		candidates = append(candidates, filepath.Join(dir, "config.yaml"), filepath.Join(dir, "config.yml"))
 	}
-	candidates = append(candidates, filepath.Join("/etc", "pinproc", "app.yaml"), filepath.Join("/etc", "pinproc", "app.yml"))
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		candidates = append(candidates, filepath.Join(xdg, "pinproc", "config.yml"))
-	} else if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(home, ".config", "pinproc", "config.yml"),
-			filepath.Join(home, ".pinproc", "config.yml"),
-		)
-	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" { candidates = append(candidates, filepath.Join(xdg, "pinproc", "config.yaml")) } else if home, err := os.UserHomeDir(); err == nil { candidates = append(candidates, filepath.Join(home, ".config", "pinproc", "config.yaml")) }
+	for _, candidate := range candidates { if _, err := os.Stat(candidate); err == nil { return candidate } }
 	return ""
 }
 
 func defaults() Config {
 	var cfg Config
+	cfg.Version = 1
 	cfg.App.Name = "pinproc"
 	cfg.App.LogLevel = "info"
-	cfg.Decision.Provider = "jev"
-	cfg.Decision.BaseURL = "https://api.typesafe.ai"
-	cfg.Decision.Model = "jev-latest"
-	cfg.Decision.Timeout = 10 * time.Second
+	cfg.AI.Config = map[string]string{}
 	cfg.Narrator.Enabled = true
-	cfg.Service.User = "pinproc"
-	cfg.Service.Group = "pinproc"
-	cfg.Service.DataDirectory = "/var/lib/pinproc"
 	cfg.Source.ReadTimeout = 2 * time.Second
 	cfg.Report.MaxFindings = 5
 	cfg.Server.Listen = "127.0.0.1:8080"
@@ -130,56 +110,16 @@ func defaults() Config {
 }
 
 func normalize(cfg *Config) {
-	key := strings.TrimSpace(cfg.Decision.APIKey)
-	switch key {
-	case "<replace-with-ai-key>", "replace-with-ai-key", "YOUR_AI_KEY", "CHANGE_ME":
-		cfg.Decision.APIKey = ""
-	}
+	cfg.AI.Provider = strings.TrimSpace(cfg.AI.Provider)
+	if cfg.AI.Config == nil { cfg.AI.Config = map[string]string{} }
 }
 
-func applyEnv(cfg *Config) {
-	if v := os.Getenv("TYPESAFE_API_KEY"); v != "" {
-		cfg.Decision.APIKey = v
-	}
-	if v := os.Getenv("DIAGNOS_DECISION_API_KEY"); v != "" {
-		cfg.Decision.APIKey = v
-	}
-	if v := os.Getenv("DIAGNOS_API_KEY"); v != "" {
-		cfg.Server.APIKey = v
-	}
-	if v := os.Getenv("DIAGNOS_DECISION_PROVIDER"); v != "" {
-		cfg.Decision.Provider = v
-	}
-	if v := os.Getenv("DIAGNOS_DECISION_MODEL"); v != "" {
-		cfg.Decision.Model = v
-	}
-	if v := os.Getenv("DIAGNOS_DECISION_BASE_URL"); v != "" {
-		cfg.Decision.BaseURL = v
-	}
-	if v := os.Getenv("PINPROC_CALLBACK_URL"); v != "" {
-		cfg.Callback.URL = v
-		cfg.Callback.Enabled = true
-	}
-}
+func ValidProviderID(id string) bool { return providerIDRE.MatchString(strings.TrimSpace(id)) }
 
 func ResolveOutputDirectory(path string) (string, error) {
 	path = strings.TrimSpace(path)
-	if path == "" {
-		return "", fmt.Errorf("data directory cannot be empty")
-	}
-	if path == "~" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve home directory: %w", err)
-		}
-		return home, nil
-	}
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve home directory: %w", err)
-		}
-		return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
-	}
+	if path == "" { return DataDirectory, nil }
+	if path == "~" { home, err := os.UserHomeDir(); if err != nil { return "", fmt.Errorf("resolve home directory: %w", err) }; return home, nil }
+	if strings.HasPrefix(path, "~/") { home, err := os.UserHomeDir(); if err != nil { return "", fmt.Errorf("resolve home directory: %w", err) }; return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil }
 	return filepath.Clean(path), nil
 }
