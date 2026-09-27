@@ -27,5 +27,8 @@ contents:
       owner: root
       group: root
 
+scripts:
+  postremove: packaging/providers/jev-postremove.sh
+
 deb:
   compression: zstd
