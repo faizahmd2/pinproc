@@ -7,7 +7,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -25,3 +25,11 @@ jobs:
 
       - name: Build
         run: make build
+
+      - name: Build provider
+        run: make build-provider
+
+      - name: Build Debian package
+        run: |
+          make package-deb GOARCH=amd64 VERSION=0.0.0
+          dpkg-deb --info dist/pinproc_0.0.0_linux_amd64.deb
