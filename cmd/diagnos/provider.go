@@ -88,6 +88,9 @@ func newAIStatusCmd() *cobra.Command {
 		Short: "show configured AI provider status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireRoot(); err != nil {
+				return err
+			}
 			cfg, err := configForCLI()
 			if err != nil {
 				return err
