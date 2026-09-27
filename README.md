@@ -47,7 +47,7 @@ sudo apt install ./pinproc_0.1.0_linux_amd64.deb
 Or use the optional release installer:
 
 ```bash
-PINPROC_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/faizahmd2/pinproc/master/scripts/install.sh | bash
+curl -fsSL https://github.com/faizahmd2/pinproc/releases/download/v0.1.0/install.sh | PINPROC_VERSION=0.1.0 bash
 ```
 
 The package creates a dedicated unprivileged `pinproc` system user and group, installs the systemd service, creates `/var/lib/pinproc`, and creates the managed configuration at `/etc/pinproc/config.yaml`.
@@ -105,7 +105,7 @@ Disable AI:
 sudo pinproc ai remove
 ```
 
-Provider packages are independent of the core package. For example, the JEV provider is distributed as `pinproc-provider-jev` and is not part of the core `pinproc` executable.
+Provider packages are independent of the core package. For example, the JEV provider is distributed separately as `pinproc-provider-jev` and is not part of the core `pinproc` executable.
 
 ## Provider protocol
 
