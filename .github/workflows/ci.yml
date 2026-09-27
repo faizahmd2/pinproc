@@ -29,7 +29,11 @@ jobs:
       - name: Build provider
         run: make build-provider
 
+      - name: Build release artifacts
+        run: make release VERSION=0.0.0
+
       - name: Build Debian package
         run: |
           make package-deb GOARCH=amd64 VERSION=0.0.0
-          dpkg-deb --info dist/pinproc_0.0.0_linux_amd64.deb
+          dpkg-deb --info dist/pinproc_0.0.0_amd64.deb
+          dpkg-deb --contents dist/pinproc_0.0.0_amd64.deb
