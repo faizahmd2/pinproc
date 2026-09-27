@@ -34,7 +34,7 @@ jobs:
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -trimpath -o "dist/pinproc_linux_$GOARCH" ./cmd/diagnos
-          NFPM_BINARY="$PWD/dist/pinproc_linux_$GOARCH" VERSION="$VERSION" GOARCH="$GOARCH" "$(go env GOPATH)/bin/nfpm" --config packaging/nfpm.yaml --packager deb --target "dist/pinproc_${VERSION}_${GOARCH}.deb"
+          NFPM_BINARY="$PWD/dist/pinproc_linux_$GOARCH" VERSION="$VERSION" GOARCH="$GOARCH" "$(go env GOPATH)/bin/nfpm" pkg --config packaging/nfpm.yaml --packager deb --target "dist/pinproc_${VERSION}_${GOARCH}.deb"
           dpkg-deb --info "dist/pinproc_${VERSION}_${GOARCH}.deb"
           dpkg-deb --contents "dist/pinproc_${VERSION}_${GOARCH}.deb" | grep -E '/usr/bin/pinproc$|/usr/lib/systemd/system/pinproc.service$|/usr/lib/sysusers.d/pinproc.conf$|/etc/pinproc/config.yaml
 
