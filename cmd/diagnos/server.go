@@ -233,7 +233,7 @@ func (s *nativeServer) runAsync(started time.Time, req investigateRequest, done 
 		return
 	}
 
-	dec, err := makeDecisionProvider(s.cfg, false)
+	dec, err := makeDecisionProvider(s.cfg)
 	if err != nil {
 		fail("decision provider unavailable: "+err.Error(), err)
 		return
@@ -248,7 +248,7 @@ func (s *nativeServer) runAsync(started time.Time, req investigateRequest, done 
 		Budget: contract.BudgetNormal(),
 		ParallelWidth: 3,
 		MaxFindings: s.cfg.Report.MaxFindings,
-		DecisionNotice: decisionNotice(s.cfg, false),
+		DecisionNotice: decisionNotice(s.cfg),
 		Logger: logger,
 	})
 
