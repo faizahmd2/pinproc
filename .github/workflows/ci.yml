@@ -7,7 +7,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -32,8 +32,32 @@ jobs:
       - name: Build release artifacts
         run: make release VERSION=0.0.0
 
-      - name: Build Debian package
+      - name: Build Debian packages
         run: |
           make package-deb GOARCH=amd64 VERSION=0.0.0
-          dpkg-deb --info dist/pinproc_0.0.0_amd64.deb
-          dpkg-deb --contents dist/pinproc_0.0.0_amd64.deb
+          make package-provider-jev GOARCH=amd64 VERSION=0.0.0
+          ls -lh dist/*.deb
+
+      - name: Smoke install and purge
+        run: |
+          CORE=dist/pinproc_0.0.0_amd64.deb
+          PROVIDER=dist/pinproc-provider-jev_0.0.0_amd64.deb
+          sudo apt install -y "$CORE" "$PROVIDER"
+          test -x /usr/bin/pinproc
+          test -x /usr/libexec/pinproc/providers/jev
+          test -f /etc/pinproc/config.yaml
+          test -d /var/lib/pinproc
+          getent passwd pinproc
+          getent group pinproc
+          sudo apt remove -y pinproc-provider-jev
+          test -x /usr/bin/pinproc
+          sudo apt remove -y pinproc
+          test -f /etc/pinproc/config.yaml
+          test -d /var/lib/pinproc
+          sudo apt install -y "$CORE"
+          sudo apt purge -y pinproc
+          test ! -e /usr/bin/pinproc
+          test ! -e /etc/pinproc
+          test ! -e /var/lib/pinproc
+          ! getent passwd pinproc
+          ! getent group pinproc
