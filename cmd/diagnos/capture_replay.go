@@ -37,12 +37,12 @@ func newCaptureCmd() *cobra.Command {
 			}
 			base := out
 			if base == "" {
-				base, err = config.StateDir
+				base = config.StateDir
 			} else {
 				base, err = config.ResolveOutputDirectory(base)
-			}
-			if err != nil {
-				return err
+				if err != nil {
+					return err
+				}
 			}
 			if err := report.EnsureWritable(base); err != nil {
 				return err
@@ -133,12 +133,12 @@ func newReplayCmd() *cobra.Command {
 			}
 			base := out
 			if base == "" {
-				base, err = config.ResolveOutputDirectory(cfg.Service.DataDirectory)
+				base = config.StateDir
 			} else {
 				base, err = config.ResolveOutputDirectory(base)
-			}
-			if err != nil {
-				return err
+				if err != nil {
+					return err
+				}
 			}
 			if err := report.Write(inv, base); err != nil {
 				return err
