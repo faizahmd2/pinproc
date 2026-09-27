@@ -37,7 +37,7 @@ func newCaptureCmd() *cobra.Command {
 			}
 			base := out
 			if base == "" {
-				base, err = config.ResolveOutputDirectory(cfg.Service.DataDirectory)
+				base, err = config.ResolveOutputDirectory(config.DataDirectory)
 			} else {
 				base, err = config.ResolveOutputDirectory(base)
 			}
@@ -133,7 +133,7 @@ func newReplayCmd() *cobra.Command {
 			}
 			base := out
 			if base == "" {
-				base, err = config.ResolveOutputDirectory(cfg.Service.DataDirectory)
+				base, err = config.ResolveOutputDirectory(config.DataDirectory)
 			} else {
 				base, err = config.ResolveOutputDirectory(base)
 			}
