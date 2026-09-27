@@ -54,4 +54,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/*.deb dist/pinproc_linux_* dist/pinproc-provider-jev_linux_* dist/checksums.txt --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release create "${GITHUB_REF_NAME}" dist/*.deb dist/pinproc_linux_* dist/pinproc-provider-jev_linux_* dist/checksums.txt scripts/install.sh --title "${GITHUB_REF_NAME}" --generate-notes
