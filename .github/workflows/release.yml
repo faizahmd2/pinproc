@@ -76,7 +76,7 @@ jobs:
           name: pinproc-${{ matrix.goarch }}
           path: |
             dist/pinproc_linux_${{ matrix.goarch }}
-            dist/pinproc_${{ github.ref_name }}_amd64.deb
+            dist/pinproc_${{ github.ref_name }}_${{ matrix.goarch }}.deb
 
   publish:
     needs: package
