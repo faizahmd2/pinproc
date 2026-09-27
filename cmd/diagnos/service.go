@@ -10,7 +10,7 @@ func newServiceCmd() *cobra.Command {
 	run.Short = "run the persistent inspection service"
 
 	cmd := &cobra.Command{
-		Use:   "service"
+		Use:   "service",
 		Short: "run the persistent pinproc service"
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
