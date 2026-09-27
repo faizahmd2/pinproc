@@ -74,7 +74,7 @@ Inspect installed providers:
 ~~~bash
 pinproc provider list
 pinproc provider show <provider>
-pinproc ai-status
+sudo pinproc ai-status
 ~~~
 
 Configure one:
