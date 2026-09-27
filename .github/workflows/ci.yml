@@ -38,3 +38,4 @@ jobs:
           dpkg-deb --info "dist/pinproc_${VERSION}_${GOARCH}.deb"
           dpkg-deb --contents "dist/pinproc_${VERSION}_${GOARCH}.deb" | grep -E '/usr/bin/pinproc$|/usr/lib/systemd/system/pinproc.service$|/usr/lib/sysusers.d/pinproc.conf$|/etc/pinproc/config.yaml
 
+
