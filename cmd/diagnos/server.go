@@ -281,8 +281,10 @@ func (s *nativeServer) runAsync(started time.Time, req investigateRequest, done 
 		return
 	}
 	if err := report.FinishState(s.report); err != nil {
+		reason := "could not persist done state: " + err.Error()
+		_ = report.FailState(s.report, report.StatusFailed, reason)
 		result.Investigation = inv
-		result.Err = fmt.Errorf("could not persist done state: %w", err)
+		result.Err = fmt.Errorf("%s", reason)
 		return
 	}
 

@@ -865,8 +865,14 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 				s.NetworkTxBPS = obs.Value
 			case "tcp.retrans_rate":
 				s.NetworkRetransmitsPerSec = obs.Value
+			case "socket.used":
+				s.SocketsUsed = uint64(obs.Value)
 			case "tcp.inuse":
 				s.TCPInUse = uint64(obs.Value)
+			case "tcp.orphan":
+				s.TCPOrphan = uint64(obs.Value)
+			case "tcp.alloc":
+				s.TCPAlloc = uint64(obs.Value)
 			case "tcp.time_wait":
 				s.TCPTimeWait = uint64(obs.Value)
 			case "tcp.listen_overflow_delta":

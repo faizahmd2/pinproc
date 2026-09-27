@@ -267,8 +267,13 @@ func parseSockets(in spec.ParseInput) (contract.Evidence, error) {
 		{Key: "proc.socket_count", Value: float64(f.Count), Unit: "count"},
 		{Key: "proc.tcp_socket_count", Value: float64(f.TCPCount), Unit: "count"},
 	}
-	for state, n := range f.TCPStates {
-		obs = append(obs, contract.Observation{Key: "proc.tcp_" + strings.ToLower(state), Value: float64(n), Unit: "count"})
+	states := make([]string, 0, len(f.TCPStates))
+	for state := range f.TCPStates {
+		states = append(states, state)
+	}
+	sort.Strings(states)
+	for _, state := range states {
+		obs = append(obs, contract.Observation{Key: "proc.tcp_" + strings.ToLower(state), Value: float64(f.TCPStates[state]), Unit: "count"})
 	}
 	for _, port := range f.ListenPorts {
 		obs = append(obs, contract.Observation{Key: "proc.tcp_listen_port", Value: float64(port), Unit: "port"})

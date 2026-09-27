@@ -303,8 +303,11 @@ type MachineSnapshot struct {
 	NetworkRxBPS            float64 `json:"network_rx_bps,omitempty"`
 	NetworkTxBPS            float64 `json:"network_tx_bps,omitempty"`
 	NetworkRetransmitsPerSec float64 `json:"network_retransmits_per_sec,omitempty"`
+	SocketsUsed             uint64  `json:"sockets_used,omitempty"`
 	TCPInUse                uint64  `json:"tcp_in_use,omitempty"`
+	TCPOrphan               uint64  `json:"tcp_orphan,omitempty"`
 	TCPTimeWait             uint64  `json:"tcp_time_wait,omitempty"`
+	TCPAlloc                uint64  `json:"tcp_alloc,omitempty"`
 	TCPListenOverflow       uint64  `json:"tcp_listen_overflow,omitempty"`
 }
 

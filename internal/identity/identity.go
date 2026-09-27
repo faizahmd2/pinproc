@@ -433,7 +433,7 @@ func primaryIP() string {
 			if ip == nil {
 				continue
 			}
-			if ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
+			if ip.IsGlobalUnicast() && isPublicAddress(ip) {
 				publicIPs = append(publicIPs, value)
 				continue
 			}
@@ -456,4 +456,16 @@ func primaryIP() string {
 		return linkLocalIPs[0]
 	}
 	return ""
+}
+
+func isPublicAddress(ip net.IP) bool {
+	if ip == nil || !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
+		return false
+	}
+	// IPv4 carrier-grade NAT (100.64.0.0/10) is globally routable inside providers
+	// but is not a public address owned on the public Internet.
+	if v4 := ip.To4(); v4 != nil {
+		return !(v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127)
+	}
+	return true
 }

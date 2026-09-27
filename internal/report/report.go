@@ -107,18 +107,23 @@ func MigrateLegacy(root string) error {
 			id := strings.TrimSpace(string(latest))
 			if id != "" {
 				legacyReport := filepath.Join(legacy, id, "investigation.json")
-				if data, readErr := os.ReadFile(legacyReport); readErr == nil {
-					var inv contract.Investigation
-					if json.Unmarshal(data, &inv) == nil {
-						if inv.IncidentCheckedAt.IsZero() {
-							inv.IncidentCheckedAt = inv.StartedAt
-						}
-						if normalized, marshalErr := json.MarshalIndent(inv, "", "  "); marshalErr == nil {
-							if err := atomic(filepath.Join(root, reportFile), append(normalized, '\n')); err != nil {
-								return err
-							}
-						}
-					}
+				data, readErr := os.ReadFile(legacyReport)
+				if readErr != nil {
+					return fmt.Errorf("read legacy report %s: %w", legacyReport, readErr)
+				}
+				var inv contract.Investigation
+				if err := json.Unmarshal(data, &inv); err != nil {
+					return fmt.Errorf("parse legacy report %s: %w", legacyReport, err)
+				}
+				if inv.IncidentCheckedAt.IsZero() {
+					inv.IncidentCheckedAt = inv.StartedAt
+				}
+				normalized, err := json.MarshalIndent(inv, "", "  ")
+				if err != nil {
+					return fmt.Errorf("normalize legacy report %s: %w", legacyReport, err)
+				}
+				if err := atomic(filepath.Join(root, reportFile), append(normalized, '\n')); err != nil {
+					return err
 				}
 			}
 		}
@@ -264,9 +269,9 @@ func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
 		fmt.Fprintf(b, "Network: RX %.1f MB/s · TX %.1f MB/s · retrans %.1f/s\n",
 			s.NetworkRxBPS/1024/1024, s.NetworkTxBPS/1024/1024, s.NetworkRetransmitsPerSec)
 	}
-	if s.TCPInUse > 0 || s.TCPTimeWait > 0 || s.TCPListenOverflow > 0 {
-		fmt.Fprintf(b, "TCP: in-use %d · TIME_WAIT %d · listen overflows %d\n",
-			s.TCPInUse, s.TCPTimeWait, s.TCPListenOverflow)
+	if s.SocketsUsed > 0 || s.TCPInUse > 0 || s.TCPTimeWait > 0 || s.TCPListenOverflow > 0 {
+		fmt.Fprintf(b, "Sockets: %d · TCP in-use %d · TIME_WAIT %d · orphan %d · listen overflows %d\n",
+			s.SocketsUsed, s.TCPInUse, s.TCPTimeWait, s.TCPOrphan, s.TCPListenOverflow)
 	}
 	b.WriteString("\n")
 }

@@ -43,8 +43,8 @@ type NetworkFacts struct {
 
 // LimitsFacts contains global limit evidence.
 type LimitsFacts struct {
-	FDUsedPct, PIDUsedPct          float64
-	FDUsed, FDMax, PIDUsed, PIDMax uint64
+	FDUsedPct, ThreadUsedPct float64
+	FDUsed, FDMax, PIDUsed, PIDMax, Threads, ThreadsMax uint64
 }
 
 // ProcessRow is one bounded attribution row.
@@ -101,6 +101,7 @@ func Limits() spec.Capability {
 		return []source.Read{
 			{Key: "proc.file_nr", Path: "/proc/sys/fs/file-nr", Kind: source.ReadFile, Optional: true},
 			{Key: "proc.pid_max", Path: "/proc/sys/kernel/pid_max", Kind: source.ReadFile, Optional: true},
+			{Key: "proc.threads_max", Path: "/proc/sys/kernel/threads-max", Kind: source.ReadFile, Optional: true},
 			{Key: "proc.somaxconn", Path: "/proc/sys/net/core/somaxconn", Kind: source.ReadFile, Optional: true},
 			{Key: "pid.stat", Path: "/proc/[0-9]*/stat", Kind: source.ReadGlob, MaxBytes: 4096, Optional: true},
 		}
@@ -312,7 +313,6 @@ func parseNetwork(in spec.ParseInput) (contract.Evidence, error) {
 	ext1, _ := procfs.ParseNetStat(first(in.Sample.T1, "proc.netstat"))
 	f.RetransRate = float64(du(snmp0.RetransSegs, snmp1.RetransSegs)) / sec
 	f.ListenOverflowDelta = float64(du(ext0.ListenOverflows, ext1.ListenOverflows))
-	sock0, _ := procfs.ParseSockStat(first(in.Sample.T0, "proc.sockstat"))
 	sock1, _ := procfs.ParseSockStat(first(in.Sample.T1, "proc.sockstat"))
 	f.SocketsUsed = float64(sock1.SocketsUsed)
 	f.TCPInUse = float64(sock1.TCPInUse)
@@ -351,11 +351,31 @@ func parseLimits(in spec.ParseInput) (contract.Evidence, error) {
 	if b := first(in.Sample.T1, "proc.pid_max"); len(b) > 0 {
 		f.PIDMax, _ = strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
 	}
-	if f.PIDMax > 0 {
-		f.PIDUsed = uint64(len(in.Sample.T1.Reads["pid.stat"]))
-		f.PIDUsedPct = float64(f.PIDUsed) / float64(f.PIDMax) * 100
+	if b := first(in.Sample.T1, "proc.threads_max"); len(b) > 0 {
+		f.ThreadsMax, _ = strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
 	}
-	return ev("ev-machine-limits", "machine.limits", contract.DimensionLimits, contract.L1Machine, f, []contract.Observation{o("limits.fd_used_pct", f.FDUsedPct, "percent"), o("limits.pid_used_pct", f.PIDUsedPct, "percent")}, "/proc/sys/fs/file-nr", "/proc/sys/kernel/pid_max", "/proc/sys/net/core/somaxconn"), nil
+	for _, raw := range in.Sample.T1.Reads["pid.stat"] {
+		if p, err := procfs.ParsePidStat(raw.Data); err == nil {
+			f.PIDUsed++
+			if p.NumThreads > 0 {
+				f.Threads += uint64(p.NumThreads)
+			}
+		}
+	}
+	if f.ThreadsMax > 0 {
+		f.ThreadUsedPct = float64(f.Threads) / float64(f.ThreadsMax) * 100
+	}
+	return ev("ev-machine-limits", "machine.limits", contract.DimensionLimits, contract.L1Machine, f,
+		[]contract.Observation{
+			o("limits.active_processes", float64(f.PIDUsed), "count"),
+			o("limits.pid_max", float64(f.PIDMax), "count"),
+			o("limits.active_threads", float64(f.Threads), "count"),
+			o("limits.threads_max", float64(f.ThreadsMax), "count"),
+			o("limits.thread_used_pct", f.ThreadUsedPct, "percent"),
+			o("limits.fd_used_pct", f.FDUsedPct, "percent"),
+		},
+		"/proc/sys/fs/file-nr", "/proc/sys/kernel/pid_max", "/proc/sys/kernel/threads-max", "/proc/sys/net/core/somaxconn", "/proc/[0-9]*/stat"), nil
+
 }
 
 func pathPID(p string) int64 {

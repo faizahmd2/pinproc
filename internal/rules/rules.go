@@ -42,7 +42,7 @@ func EvalAll(rs []Rule, ev []contract.Evidence) []Signal {
 
 // Default returns the V2 deterministic rule set.
 func Default() []Rule {
-	return []Rule{cpuSaturated{}, cpuPSI{}, cpuIOWait{}, cpuSteal{}, memPressure{}, memSwap{}, memOOM{}, ioSaturated{}, ioBlocked{}, fdExhausted{}, pidExhausted{}, netRetransmit{}, netListenOverflow{}, cgroupThrottled{}, fsNearlyFull{}, deletedOpenLarge{}}
+	return []Rule{cpuSaturated{}, cpuPSI{}, cpuIOWait{}, cpuSteal{}, memPressure{}, memSwap{}, memOOM{}, ioSaturated{}, ioBlocked{}, fdExhausted{}, threadCapacity{}, netRetransmit{}, netListenOverflow{}, cgroupThrottled{}, fsNearlyFull{}, deletedOpenLarge{}}
 }
 
 type cpuSaturated struct{}
@@ -166,15 +166,15 @@ func (fdExhausted) Eval(ev []contract.Evidence) (Signal, bool) {
 	return Signal{"limits.fd_exhaustion", contract.DimensionLimits, 3, fmt.Sprintf("file descriptor usage is %.1f%%", o.Value), support(ev, "limits.fd_used_pct"), true}, true
 }
 
-type pidExhausted struct{}
+type threadCapacity struct{}
 
-func (pidExhausted) ID() string { return "limits.pid_exhaustion" }
-func (pidExhausted) Eval(ev []contract.Evidence) (Signal, bool) {
-	o, ok := find(ev, "limits.pid_used_pct")
+func (threadCapacity) ID() string { return "limits.thread_capacity" }
+func (threadCapacity) Eval(ev []contract.Evidence) (Signal, bool) {
+	o, ok := find(ev, "limits.thread_used_pct")
 	if !ok || o.Value <= 80 {
 		return Signal{}, false
 	}
-	return Signal{"limits.pid_exhaustion", contract.DimensionLimits, 3, fmt.Sprintf("PID usage is %.1f%%", o.Value), support(ev, "limits.pid_used_pct"), true}, true
+	return Signal{"limits.thread_capacity", contract.DimensionLimits, 3, fmt.Sprintf("active system threads are %.1f%% of threads-max", o.Value), support(ev, "limits.thread_used_pct"), true}, true
 }
 func find(ev []contract.Evidence, key string) (contract.Observation, bool) {
 	for _, e := range ev {
