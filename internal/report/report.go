@@ -12,81 +12,61 @@ import (
 	"github.com/faizahmd2/pinproc/internal/contract"
 )
 
-type RunningStatus struct {
-	ID        string    `json:"id"`
-	Host      string    `json:"host"`
-	Trigger   string    `json:"trigger,omitempty"`
-	StartedAt time.Time `json:"started_at"`
-}
+const reportFile = "report.json"
 
-func WriteRunning(root, id, host, trigger string) error {
-	if id == "" {
-		return fmt.Errorf("running status id is empty")
+func Failure(started time.Time, hint, reason string, stop contract.StopReason) *contract.Investigation {
+	if started.IsZero() {
+		started = time.Now()
 	}
-	status := RunningStatus{ID: id, Host: host, Trigger: trigger, StartedAt: time.Now()}
-	b, err := json.MarshalIndent(status, "", "  ")
-	if err != nil {
-		return err
+	host, _ := os.Hostname()
+	return &contract.Investigation{
+		SchemaVersion:     contract.SchemaVersion,
+		Host:              host,
+		Hint:              hint,
+		StartedAt:         started,
+		IncidentCheckedAt: started,
+		StopReason:        stop,
+		Limitations:       []string{"investigation failed completely: " + reason},
 	}
-	return atomic(filepath.Join(root, "running.json"), append(b, '\n'))
-}
-
-func ReadRunning(root string) (RunningStatus, error) {
-	b, err := os.ReadFile(filepath.Join(root, "running.json"))
-	if err != nil {
-		return RunningStatus{}, err
-	}
-	var status RunningStatus
-	if err := json.Unmarshal(b, &status); err != nil {
-		return RunningStatus{}, err
-	}
-	return status, nil
-}
-
-func WriteFailure(root, id, host, trigger, hint string, budget contract.Budget, reason string, stop contract.StopReason) error {
-	if stop == "" {
-		stop = contract.StopError
-	}
-	inv := &contract.Investigation{SchemaVersion: contract.SchemaVersion, ID: id, Host: host, Trigger: trigger, Hint: hint, StartedAt: time.Now(), Budget: budget, StopReason: stop, Limitations: []string{"investigation failed completely: " + reason}}
-	return Write(inv, root)
 }
 
 func Write(inv *contract.Investigation, root string) error {
 	if inv == nil {
 		return fmt.Errorf("investigation is nil")
 	}
-	if inv.ID == "" {
-		return fmt.Errorf("investigation id is empty")
+	if inv.StartedAt.IsZero() {
+		inv.StartedAt = time.Now()
 	}
-	if err := os.MkdirAll(root, 0755); err != nil {
-		return err
+	if inv.IncidentCheckedAt.IsZero() {
+		inv.IncidentCheckedAt = inv.StartedAt
 	}
-	dir := filepath.Join(root, inv.ID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(root, 0750); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(inv, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := atomic(filepath.Join(dir, "investigation.json"), append(b, '\n')); err != nil {
-		return err
+	return atomic(filepath.Join(root, reportFile), append(b, '\n'))
+}
+
+func Read(root string) (*contract.Investigation, error) {
+	b, err := os.ReadFile(filepath.Join(root, reportFile))
+	if err != nil {
+		return nil, err
 	}
-	if err := atomic(filepath.Join(dir, "report.md"), []byte(RenderMarkdown(inv))); err != nil {
-		return err
+	var inv contract.Investigation
+	if err := json.Unmarshal(b, &inv); err != nil {
+		return nil, err
 	}
-	if err := retain(root, 3); err != nil {
-		return err
-	}
-	_ = os.Remove(filepath.Join(root, "running.json"))
-	return atomic(filepath.Join(root, "latest.txt"), []byte(inv.ID+"\n"))
+	return &inv, nil
 }
 
 func EnsureWritable(root string) error {
-	if err := os.MkdirAll(root, 0755); err != nil {
+	if err := os.MkdirAll(root, 0750); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(root, ".diagnos-startup-*")
+	f, err := os.CreateTemp(root, ".pinproc-startup-*")
 	if err != nil {
 		return err
 	}
@@ -108,67 +88,59 @@ func EnsureWritable(root string) error {
 	return os.Remove(name)
 }
 
-func LatestDir(root string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(root, "latest.txt"))
+// MigrateLegacy converts the V1 rotating report directory into the V2 single-report store.
+func MigrateLegacy(root string) error {
+	legacy := filepath.Join(root, "reports")
+	info, err := os.Stat(legacy)
 	if err != nil {
-		return "", err
-	}
-	id := strings.TrimSpace(string(b))
-	if id == "" {
-		return "", fmt.Errorf("latest report pointer is empty")
-	}
-	return filepath.Join(root, id), nil
-}
-
-func retain(root string, keep int) error {
-	entries, err := os.ReadDir(root)
-	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
-	var ids []string
-	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), "inv-") {
-			ids = append(ids, e.Name())
+	if !info.IsDir() {
+		return fmt.Errorf("legacy report path %s is not a directory", legacy)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, reportFile)); os.IsNotExist(err) {
+		if latest, latestErr := os.ReadFile(filepath.Join(legacy, "latest.txt")); latestErr == nil {
+			id := strings.TrimSpace(string(latest))
+			if id != "" {
+				legacyReport := filepath.Join(legacy, id, "investigation.json")
+				if data, readErr := os.ReadFile(legacyReport); readErr == nil {
+					var inv contract.Investigation
+					if json.Unmarshal(data, &inv) == nil {
+						if inv.IncidentCheckedAt.IsZero() {
+							inv.IncidentCheckedAt = inv.StartedAt
+						}
+						if normalized, marshalErr := json.MarshalIndent(inv, "", "  "); marshalErr == nil {
+							if err := atomic(filepath.Join(root, reportFile), append(normalized, '\n')); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
 		}
 	}
-	sort.Strings(ids)
-	if len(ids) <= keep {
-		return nil
-	}
-	for _, id := range ids[:len(ids)-keep] {
-		if err := os.RemoveAll(filepath.Join(root, id)); err != nil {
-			return err
+	if _, err := os.Stat(filepath.Join(root, "state.json")); os.IsNotExist(err) {
+		if data, readErr := os.ReadFile(filepath.Join(legacy, "state.json")); readErr == nil {
+			var old InspectionState
+			if json.Unmarshal(data, &old) == nil {
+				_ = WriteState(root, old)
+			}
 		}
 	}
-	return nil
-}
-
-func atomic(path string, b []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".diagnos-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if _, err = f.Write(b); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err = f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, path)
+	return os.RemoveAll(legacy)
 }
 
 func RenderMarkdown(inv *contract.Investigation) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# pinproc — %s\n\n", displayHost(inv))
+	if inv.IncidentCheckedAt.IsZero() {
+		inv.IncidentCheckedAt = inv.StartedAt
+	}
+	fmt.Fprintf(&b, "Incident checked: %s\n\n", inv.IncidentCheckedAt.Format(time.RFC3339))
 	renderMachineSnapshot(&b, inv)
 
 	if len(inv.Hypotheses) > 0 {
@@ -177,7 +149,7 @@ func RenderMarkdown(inv *contract.Investigation) string {
 		b.WriteString("No material anomaly was established.")
 	}
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "%s · %d levels · budget: %s\n", formatDuration(inv.Duration), inv.Spent.Depth, budgetName(inv))
+	fmt.Fprintf(&b, "%s · %d levels\n", formatDuration(inv.Duration), inv.Spent.Depth)
 
 	for i, h := range inv.Hypotheses {
 		fmt.Fprintf(&b, "\n%d. %s [%s] %.2f\n", i+1, h.Statement, h.Grade, h.Confidence)
@@ -233,13 +205,16 @@ func RenderMarkdown(inv *contract.Investigation) string {
 }
 
 func displayHost(inv *contract.Investigation) string {
-	if inv != nil && isLocalReportHost(inv.Host) && inv.Machine.Hostname != "" {
-		return inv.Machine.Hostname
+	if inv == nil {
+		return "unknown"
 	}
-	if inv != nil && inv.Host != "" {
+	if inv.Host != "" && !isLocalReportHost(inv.Host) {
 		return inv.Host
 	}
-	return "localhost"
+	if inv.Machine.Hostname != "" {
+		return inv.Machine.Hostname
+	}
+	return inv.Host
 }
 
 func isLocalReportHost(host string) bool {
@@ -253,6 +228,9 @@ func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
 	m := inv.Machine
 	s := inv.MachineSnapshot
 	b.WriteString("## Machine snapshot\n\n")
+	if m.Hostname != "" {
+		fmt.Fprintf(b, "Hostname: %s\n", m.Hostname)
+	}
 	if m.PrimaryIP != "" {
 		fmt.Fprintf(b, "IP: %s\n", m.PrimaryIP)
 	}
@@ -275,9 +253,20 @@ func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
 		fmt.Fprintf(b, "Memory: %s / %s used · %.0f%% · swap %.0f%%\n",
 			formatBytes(s.MemoryUsedBytes), formatBytes(s.MemoryTotalBytes), s.MemoryUsedPct, s.SwapUsedPct)
 	}
-	if s.RootDiskTotalBytes > 0 {
+	if s.PrimaryDiskDevice != "" {
+		fmt.Fprintf(b, "Disk: %s · read %.1f MB/s · write %.1f MB/s · util %.1f%% · await %.1f ms\n",
+			s.PrimaryDiskDevice, s.DiskReadBPS/1024/1024, s.DiskWriteBPS/1024/1024, s.DiskUtilizationPct, s.DiskAwaitMS)
+	} else if s.RootDiskTotalBytes > 0 {
 		fmt.Fprintf(b, "Disk %s: %s / %s used · %.0f%%\n",
 			s.RootDiskPath, formatBytes(s.RootDiskUsedBytes), formatBytes(s.RootDiskTotalBytes), s.RootDiskUsedPct)
+	}
+	if s.NetworkRxBPS > 0 || s.NetworkTxBPS > 0 {
+		fmt.Fprintf(b, "Network: RX %.1f MB/s · TX %.1f MB/s · retrans %.1f/s\n",
+			s.NetworkRxBPS/1024/1024, s.NetworkTxBPS/1024/1024, s.NetworkRetransmitsPerSec)
+	}
+	if s.TCPInUse > 0 || s.TCPTimeWait > 0 || s.TCPListenOverflow > 0 {
+		fmt.Fprintf(b, "TCP: in-use %d · TIME_WAIT %d · listen overflows %d\n",
+			s.TCPInUse, s.TCPTimeWait, s.TCPListenOverflow)
 	}
 	b.WriteString("\n")
 }
@@ -370,6 +359,7 @@ func findingDetail(inv *contract.Investigation, h contract.Hypothesis) string {
 	}
 	return strings.Join(parts, " · ")
 }
+
 func shortKey(k string) string {
 	if i := strings.LastIndex(k, ":"); i >= 0 {
 		k = k[:i]
@@ -379,6 +369,7 @@ func shortKey(k string) string {
 	}
 	return strings.ReplaceAll(k, "_", " ")
 }
+
 func renderChain(b *strings.Builder, inv *contract.Investigation, top contract.Entity) {
 	b.WriteString("machine")
 	e := top
@@ -414,6 +405,7 @@ func renderChain(b *strings.Builder, inv *contract.Investigation, top contract.E
 	}
 	b.WriteString("\n")
 }
+
 func verifyForTopFinding(inv *contract.Investigation, top contract.Entity) []string {
 	allowed := map[string]bool{top.ID: true}
 	current := top
@@ -447,9 +439,7 @@ func verifyForTopFinding(inv *contract.Investigation, top contract.Entity) []str
 	sort.Strings(out)
 	return out
 }
-func sameEntity(a, b contract.Entity) bool {
-	return a.Kind == b.Kind && a.ID == b.ID && a.ParentID == b.ParentID
-}
+
 func unique(in []string) []string {
 	m := map[string]bool{}
 	out := []string{}
@@ -461,18 +451,37 @@ func unique(in []string) []string {
 	}
 	return out
 }
-func budgetName(inv *contract.Investigation) string {
-	if inv.Budget.MaxDepth <= 2 {
-		return "fast"
-	}
-	if inv.Budget.MaxDepth >= 5 {
-		return "deep"
-	}
-	return "normal"
-}
+
 func formatDuration(d time.Duration) string {
 	if d <= 0 {
 		return "0.0s"
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+func atomic(path string, b []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".pinproc-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err = f.Write(b); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err = f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

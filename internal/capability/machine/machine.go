@@ -36,7 +36,10 @@ type IOFacts struct {
 }
 
 // NetworkFacts contains interface network evidence.
-type NetworkFacts struct{ RxBPS, TxBPS, RxDropRate, RetransRate, ListenOverflowDelta float64 }
+type NetworkFacts struct {
+	RxBPS, TxBPS, RxDropRate, RetransRate, ListenOverflowDelta float64
+	SocketsUsed, TCPInUse, TCPOrphan, TCPTimeWait, TCPAlloc float64
+}
 
 // LimitsFacts contains global limit evidence.
 type LimitsFacts struct {
@@ -95,7 +98,12 @@ func Network() spec.Capability {
 // Limits returns the machine limits capability.
 func Limits() spec.Capability {
 	return spec.Capability{ID: "machine.limits", Dimension: contract.DimensionLimits, Level: contract.L1Machine, Kind: contract.KindSnapshot, Accepts: contract.EntityMachine, Cost: contract.CostLow, Summary: "global file-descriptor, PID and socket limits", Reads: func(contract.Entity, contract.Facts) []source.Read {
-		return []source.Read{{Key: "proc.file_nr", Path: "/proc/sys/fs/file-nr", Kind: source.ReadFile, Optional: true}, {Key: "proc.pid_max", Path: "/proc/sys/kernel/pid_max", Kind: source.ReadFile, Optional: true}, {Key: "proc.somaxconn", Path: "/proc/sys/net/core/somaxconn", Kind: source.ReadFile, Optional: true}}
+		return []source.Read{
+			{Key: "proc.file_nr", Path: "/proc/sys/fs/file-nr", Kind: source.ReadFile, Optional: true},
+			{Key: "proc.pid_max", Path: "/proc/sys/kernel/pid_max", Kind: source.ReadFile, Optional: true},
+			{Key: "proc.somaxconn", Path: "/proc/sys/net/core/somaxconn", Kind: source.ReadFile, Optional: true},
+			{Key: "pid.stat", Path: "/proc/[0-9]*/stat", Kind: source.ReadGlob, MaxBytes: 4096, Optional: true},
+		}
 	}, Parse: parseLimits}
 }
 
@@ -304,6 +312,14 @@ func parseNetwork(in spec.ParseInput) (contract.Evidence, error) {
 	ext1, _ := procfs.ParseNetStat(first(in.Sample.T1, "proc.netstat"))
 	f.RetransRate = float64(du(snmp0.RetransSegs, snmp1.RetransSegs)) / sec
 	f.ListenOverflowDelta = float64(du(ext0.ListenOverflows, ext1.ListenOverflows))
+	sock0, _ := procfs.ParseSockStat(first(in.Sample.T0, "proc.sockstat"))
+	sock1, _ := procfs.ParseSockStat(first(in.Sample.T1, "proc.sockstat"))
+	f.SocketsUsed = float64(sock1.SocketsUsed)
+	f.TCPInUse = float64(sock1.TCPInUse)
+	f.TCPOrphan = float64(sock1.TCPOrphan)
+	f.TCPTimeWait = float64(sock1.TCPTimeWait)
+	f.TCPAlloc = float64(sock1.TCPAlloc)
+	_ = sock0
 	return ev("ev-machine-network", "machine.network", contract.DimensionNetwork, contract.L1Machine, f,
 		[]contract.Observation{
 			o("net.rx_bps", f.RxBPS, "bytes_per_sec"),
@@ -311,6 +327,11 @@ func parseNetwork(in spec.ParseInput) (contract.Evidence, error) {
 			o("net.rx_drop_rate", f.RxDropRate, "count_per_sec"),
 			o("tcp.retrans_rate", f.RetransRate, "count_per_sec"),
 			o("tcp.listen_overflow_delta", f.ListenOverflowDelta, "count"),
+			o("socket.used", f.SocketsUsed, "count"),
+			o("tcp.inuse", f.TCPInUse, "count"),
+			o("tcp.orphan", f.TCPOrphan, "count"),
+			o("tcp.time_wait", f.TCPTimeWait, "count"),
+			o("tcp.alloc", f.TCPAlloc, "count"),
 		},
 		"/proc/net/dev", "/proc/net/snmp", "/proc/net/netstat", "/proc/net/sockstat"), nil
 }
@@ -329,6 +350,10 @@ func parseLimits(in spec.ParseInput) (contract.Evidence, error) {
 	}
 	if b := first(in.Sample.T1, "proc.pid_max"); len(b) > 0 {
 		f.PIDMax, _ = strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
+	}
+	if f.PIDMax > 0 {
+		f.PIDUsed = uint64(len(in.Sample.T1.Reads["pid.stat"]))
+		f.PIDUsedPct = float64(f.PIDUsed) / float64(f.PIDMax) * 100
 	}
 	return ev("ev-machine-limits", "machine.limits", contract.DimensionLimits, contract.L1Machine, f, []contract.Observation{o("limits.fd_used_pct", f.FDUsedPct, "percent"), o("limits.pid_used_pct", f.PIDUsedPct, "percent")}, "/proc/sys/fs/file-nr", "/proc/sys/kernel/pid_max", "/proc/sys/net/core/somaxconn"), nil
 }

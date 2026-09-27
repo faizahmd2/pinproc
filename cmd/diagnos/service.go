@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/faizahmd2/pinproc/internal/config"
+	"github.com/faizahmd2/pinproc/internal/report"
 	"github.com/spf13/cobra"
 )
 
@@ -69,19 +70,11 @@ func newServiceInstallCmd() *cobra.Command {
 			if err := os.MkdirAll(dataDir, 0750); err != nil {
 				return fmt.Errorf("create data directory: %w", err)
 			}
+			if err := report.MigrateLegacy(dataDir); err != nil {
+				return fmt.Errorf("migrate legacy report storage: %w", err)
+			}
 			if err := os.Chown(dataDir, uid, gid); err != nil {
 				return fmt.Errorf("own data directory: %w", err)
-			}
-
-			outputDir, err := resolveServiceOutput(cfg.Output.Directory, serviceUser)
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(outputDir, 0750); err != nil {
-				return fmt.Errorf("create report directory: %w", err)
-			}
-			if err := os.Chown(outputDir, uid, gid); err != nil {
-				return fmt.Errorf("own report directory: %w", err)
 			}
 
 			if err := installConfig(cfgFile, serviceUser, serviceGroup); err != nil {
@@ -140,36 +133,33 @@ func newServiceUninstallCmd() *cobra.Command {
 func resolveServiceAccount(configUser, configGroup string) (string, string, error) {
 	u := strings.TrimSpace(configUser)
 	if u == "" {
-		u = strings.TrimSpace(os.Getenv("SUDO_USER"))
-	}
-	if u == "" {
-		cur, err := user.Current()
-		if err != nil {
-			return "", "", err
-		}
-		u = cur.Username
-	}
-	if u == "" {
-		return "", "", fmt.Errorf("could not determine service user")
-	}
-
-	if _, err := user.Lookup(u); err != nil {
-		return "", "", fmt.Errorf("service user %q does not exist; either leave service.user blank or create the service user first", u)
+		u = "pinproc"
 	}
 	g := strings.TrimSpace(configGroup)
 	if g == "" {
-		usr, err := user.Lookup(u)
-		if err != nil {
-			return "", "", err
-		}
-		grp, err := user.LookupGroupId(usr.Gid)
-		if err != nil {
-			return "", "", err
-		}
-		g = grp.Name
+		g = "pinproc"
 	}
+
 	if _, err := user.LookupGroup(g); err != nil {
-		return "", "", fmt.Errorf("service group %q does not exist", g)
+		if g != "pinproc" {
+			return "", "", fmt.Errorf("service group %q does not exist", g)
+		}
+		if out, err := exec.Command("groupadd", "--system", g).CombinedOutput(); err != nil {
+			if _, lookupErr := user.LookupGroup(g); lookupErr != nil {
+				return "", "", fmt.Errorf("create service group %q: %s", g, strings.TrimSpace(string(out)))
+			}
+		}
+	}
+	if _, err := user.Lookup(u); err != nil {
+		if u != "pinproc" || g != "pinproc" {
+			return "", "", fmt.Errorf("service user %q does not exist", u)
+		}
+		args := []string{"--system", "--gid", g, "--home-dir", "/var/lib/pinproc", "--no-create-home", "--shell", "/usr/sbin/nologin", u}
+		if out, err := exec.Command("useradd", args...).CombinedOutput(); err != nil {
+			if _, lookupErr := user.Lookup(u); lookupErr != nil {
+				return "", "", fmt.Errorf("create service user %q: %s", u, strings.TrimSpace(string(out)))
+			}
+		}
 	}
 	return u, g, nil
 }
@@ -192,21 +182,6 @@ func lookupIDs(serviceUser, serviceGroup string) (int, int, error) {
 		return 0, 0, err
 	}
 	return uid, gid, nil
-}
-
-func resolveServiceOutput(path, serviceUser string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return "/var/lib/pinproc/reports", nil
-	}
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		u, err := user.Lookup(serviceUser)
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(u.HomeDir, strings.TrimPrefix(path, "~/")), nil
-	}
-	return filepath.Clean(path), nil
 }
 
 func installConfig(sourcePath, serviceUser, serviceGroup string) error {

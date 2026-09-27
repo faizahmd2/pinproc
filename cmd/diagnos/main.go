@@ -26,7 +26,13 @@ func main() {
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config path")
 	legacyServe := newServeCmd()
 	legacyServe.Hidden = true
-	root.AddCommand(newServiceCmd(), legacyServe, newInvestigateCmd(), newCaptureCmd(), newReplayCmd())
+	investigateCmd := newInvestigateCmd()
+	investigateCmd.Hidden = true
+	captureCmd := newCaptureCmd()
+	captureCmd.Hidden = true
+	replayCmd := newReplayCmd()
+	replayCmd.Hidden = true
+	root.AddCommand(newServiceCmd(), legacyServe, investigateCmd, captureCmd, replayCmd)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

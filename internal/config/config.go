@@ -10,12 +10,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type EngineConfig struct {
-	Budget        string        `yaml:"budget"`
-	SampleWindow  time.Duration `yaml:"sample_window"`
-	ParallelWidth int           `yaml:"parallel_width"`
-}
-
 type DecisionConfig struct {
 	Provider string        `yaml:"provider"`
 	BaseURL  string        `yaml:"base_url"`
@@ -38,13 +32,18 @@ type ServiceConfig struct {
 	DataDirectory string `yaml:"data_directory"`
 }
 
+type CallbackConfig struct {
+	Enabled bool          `yaml:"enabled"`
+	URL     string        `yaml:"url"`
+	Timeout time.Duration `yaml:"timeout"`
+}
+
 type Config struct {
 	App struct {
 		Name     string `yaml:"name"`
 		LogLevel string `yaml:"log_level"`
 	} `yaml:"app"`
 
-	Engine   EngineConfig   `yaml:"engine"`
 	Decision DecisionConfig `yaml:"decision"`
 	Narrator NarratorConfig `yaml:"narrator"`
 	Service  ServiceConfig  `yaml:"service"`
@@ -52,15 +51,11 @@ type Config struct {
 	Report   struct {
 		MaxFindings int `yaml:"max_findings"`
 	} `yaml:"report"`
-
 	Server struct {
 		Listen string `yaml:"listen"`
 		APIKey string `yaml:"api_key"`
 	} `yaml:"server"`
-
-	Output struct {
-		Directory string `yaml:"directory"`
-	} `yaml:"output"`
+	Callback CallbackConfig `yaml:"callback"`
 }
 
 func Load(path string) (*Config, error) {
@@ -100,13 +95,11 @@ func DiscoverPath() string {
 	}
 	candidates = append(candidates, filepath.Join("/etc", "pinproc", "app.yaml"), filepath.Join("/etc", "pinproc", "app.yml"))
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		candidates = append(candidates, filepath.Join(xdg, "pinproc", "config.yml"), filepath.Join(xdg, "diagnos", "config.yml"))
+		candidates = append(candidates, filepath.Join(xdg, "pinproc", "config.yml"))
 	} else if home, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(home, ".config", "pinproc", "config.yml"),
-			filepath.Join(home, ".config", "diagnos", "config.yml"),
 			filepath.Join(home, ".pinproc", "config.yml"),
-			filepath.Join(home, ".diagnos", "config.yml"),
 		)
 	}
 	for _, candidate := range candidates {
@@ -121,19 +114,18 @@ func defaults() Config {
 	var cfg Config
 	cfg.App.Name = "pinproc"
 	cfg.App.LogLevel = "info"
-	cfg.Output.Directory = "~/pinproc/reports"
-	cfg.Engine.Budget = "normal"
-	cfg.Engine.SampleWindow = time.Second
-	cfg.Engine.ParallelWidth = 3
 	cfg.Decision.Provider = "jev"
 	cfg.Decision.BaseURL = "https://api.typesafe.ai"
 	cfg.Decision.Model = "jev-latest"
 	cfg.Decision.Timeout = 10 * time.Second
 	cfg.Narrator.Enabled = true
+	cfg.Service.User = "pinproc"
+	cfg.Service.Group = "pinproc"
 	cfg.Service.DataDirectory = "/var/lib/pinproc"
 	cfg.Source.ReadTimeout = 2 * time.Second
 	cfg.Report.MaxFindings = 5
 	cfg.Server.Listen = "127.0.0.1:8080"
+	cfg.Callback.Timeout = 5 * time.Second
 	return cfg
 }
 
@@ -155,9 +147,6 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("DIAGNOS_API_KEY"); v != "" {
 		cfg.Server.APIKey = v
 	}
-	if v := os.Getenv("DIAGNOS_ENGINE_BUDGET"); v != "" {
-		cfg.Engine.Budget = v
-	}
 	if v := os.Getenv("DIAGNOS_DECISION_PROVIDER"); v != "" {
 		cfg.Decision.Provider = v
 	}
@@ -167,12 +156,16 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("DIAGNOS_DECISION_BASE_URL"); v != "" {
 		cfg.Decision.BaseURL = v
 	}
+	if v := os.Getenv("PINPROC_CALLBACK_URL"); v != "" {
+		cfg.Callback.URL = v
+		cfg.Callback.Enabled = true
+	}
 }
 
 func ResolveOutputDirectory(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return "", fmt.Errorf("output directory cannot be empty")
+		return "", fmt.Errorf("data directory cannot be empty")
 	}
 	if path == "~" {
 		home, err := os.UserHomeDir()

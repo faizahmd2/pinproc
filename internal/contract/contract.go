@@ -282,25 +282,36 @@ type MachineIdentity struct {
 
 // MachineSnapshot contains a compact current-state summary for the report.
 type MachineSnapshot struct {
-	CPUs                 int     `json:"cpus,omitempty"`
-	CPUUtilizationPct    float64 `json:"cpu_utilization_pct,omitempty"`
-	Load1                float64 `json:"load1,omitempty"`
-	MemoryTotalBytes     uint64  `json:"memory_total_bytes,omitempty"`
-	MemoryAvailableBytes uint64  `json:"memory_available_bytes,omitempty"`
-	MemoryUsedBytes      uint64  `json:"memory_used_bytes,omitempty"`
-	MemoryUsedPct        float64 `json:"memory_used_pct,omitempty"`
-	SwapUsedPct          float64 `json:"swap_used_pct,omitempty"`
-	RootDiskPath         string  `json:"root_disk_path,omitempty"`
-	RootDiskTotalBytes   uint64  `json:"root_disk_total_bytes,omitempty"`
-	RootDiskUsedBytes    uint64  `json:"root_disk_used_bytes,omitempty"`
-	RootDiskFreeBytes    uint64  `json:"root_disk_free_bytes,omitempty"`
-	RootDiskUsedPct      float64 `json:"root_disk_used_pct,omitempty"`
+	CPUs                    int     `json:"cpus,omitempty"`
+	CPUUtilizationPct       float64 `json:"cpu_utilization_pct,omitempty"`
+	Load1                   float64 `json:"load1,omitempty"`
+	MemoryTotalBytes        uint64  `json:"memory_total_bytes,omitempty"`
+	MemoryAvailableBytes    uint64  `json:"memory_available_bytes,omitempty"`
+	MemoryUsedBytes         uint64  `json:"memory_used_bytes,omitempty"`
+	MemoryUsedPct            float64 `json:"memory_used_pct,omitempty"`
+	SwapUsedPct             float64 `json:"swap_used_pct,omitempty"`
+	RootDiskPath            string  `json:"root_disk_path,omitempty"`
+	RootDiskTotalBytes      uint64  `json:"root_disk_total_bytes,omitempty"`
+	RootDiskUsedBytes       uint64  `json:"root_disk_used_bytes,omitempty"`
+	RootDiskFreeBytes       uint64  `json:"root_disk_free_bytes,omitempty"`
+	RootDiskUsedPct         float64 `json:"root_disk_used_pct,omitempty"`
+	PrimaryDiskDevice       string  `json:"primary_disk_device,omitempty"`
+	DiskReadBPS             float64 `json:"disk_read_bps,omitempty"`
+	DiskWriteBPS            float64 `json:"disk_write_bps,omitempty"`
+	DiskUtilizationPct      float64 `json:"disk_utilization_pct,omitempty"`
+	DiskAwaitMS             float64 `json:"disk_await_ms,omitempty"`
+	NetworkRxBPS            float64 `json:"network_rx_bps,omitempty"`
+	NetworkTxBPS            float64 `json:"network_tx_bps,omitempty"`
+	NetworkRetransmitsPerSec float64 `json:"network_retransmits_per_sec,omitempty"`
+	TCPInUse                uint64  `json:"tcp_in_use,omitempty"`
+	TCPTimeWait             uint64  `json:"tcp_time_wait,omitempty"`
+	TCPListenOverflow       uint64  `json:"tcp_listen_overflow,omitempty"`
 }
 
 // Investigation is the stable JSON contract.
 type Investigation struct {
 	SchemaVersion    int             `json:"schema_version"`
-	ID               string          `json:"id"`
+	ID               string          `json:"-"`
 	Host             string          `json:"host"`
 	Machine          MachineIdentity `json:"machine"`
 	MachineSnapshot  MachineSnapshot `json:"machine_snapshot"`
@@ -308,6 +319,7 @@ type Investigation struct {
 	Trigger          string          `json:"trigger"`
 	Hint             string          `json:"hint,omitempty"`
 	StartedAt        time.Time       `json:"started_at"`
+	IncidentCheckedAt time.Time       `json:"incident_checked_at"`
 	Duration         time.Duration   `json:"duration_ns"`
 	Budget           Budget          `json:"budget"`
 	Spent            Spend           `json:"spent"`
