@@ -62,7 +62,7 @@ func newServeCmd() *cobra.Command {
 			if listen == "" {
 				listen = "127.0.0.1:8080"
 			}
-			dir, err := config.ResolveOutputDirectory(cfg.Service.DataDirectory)
+			dir, err := config.ResolveOutputDirectory(config.DataDirectory)
 			if err != nil {
 				return err
 			}
