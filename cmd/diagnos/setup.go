@@ -104,8 +104,7 @@ func newSetupAICmd() *cobra.Command {
 			if err := config.SaveManaged(cfg); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "AI provider configured: %s
-", selected.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "AI provider configured: %s\n", selected.Name)
 			return restartService(cmd.OutOrStdout())
 		},
 	}
@@ -194,7 +193,6 @@ func newSetupServerCmd() *cobra.Command {
 			case "-":
 				cfg.Server.APIKey = ""
 			case "":
-				// Keep the current key.
 			default:
 				cfg.Server.APIKey = secret
 			}
@@ -233,8 +231,7 @@ func selectProvider(in *os.File, out io.Writer, manifests []provider.Manifest, r
 	}
 	reader := bufio.NewReader(in)
 	for i, m := range manifests {
-		fmt.Fprintf(out, "%d) %s (%s)
-", i+1, m.Name, m.ID)
+		fmt.Fprintf(out, "%d) %s (%s)\n", i+1, m.Name, m.ID)
 	}
 	value, err := promptLine(reader, out, "Select provider", "1")
 	if err != nil {
@@ -323,13 +320,11 @@ func promptLine(reader *bufio.Reader, out io.Writer, label, def string) (string,
 	} else {
 		fmt.Fprintf(out, "%s: ", label)
 	}
-	value, err := reader.ReadString('
-')
+	value, err := reader.ReadString('\n')
 	if err != nil && len(value) == 0 {
 		return "", err
 	}
-	value = strings.TrimRight(value, "
-")
+	value = strings.TrimRight(value, "\r\n")
 	if value == "" {
 		return def, nil
 	}
