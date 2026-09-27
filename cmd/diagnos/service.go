@@ -19,12 +19,13 @@ func newServiceCmd() *cobra.Command {
 	run := newServeCmd()
 	run.Use = "run"
 	run.Short = "run the persistent inspection service"
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use: "service",
 		Short: "run the persistent pinproc service",
-		Run: func(cmd *cobra.Command, args []string) { _ = cmd; _ = args },
-		Commands: []*cobra.Command{run},
+		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
+	cmd.AddCommand(run)
+	return cmd
 }
 
 func renderServiceUnit(exe, serviceUser, serviceGroup, dataDir string) string {
