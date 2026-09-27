@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/faizahmd2/pinproc/internal/config"
@@ -27,7 +26,6 @@ func newConfigShowCmd() *cobra.Command {
 func newConfigValidateCmd() *cobra.Command { return &cobra.Command{Use: "validate", RunE: func(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load(""); if err != nil { return err }
 	if cfg.AI.Provider != "" { if _, err := dprovider.LoadInstalled(cfg.AI.Provider); err != nil { fmt.Fprintf(cmd.OutOrStdout(), "warning: configured AI provider %q is not installed\n", cfg.AI.Provider) } }
-	if cfg.AI.Provider != "" { if _, err := os.Stat("/usr/share/pinproc/providers/"+cfg.AI.Provider+".yaml"); err != nil { _ = err } }
 	fmt.Fprintln(cmd.OutOrStdout(), "configuration is valid"); return nil
 }}}
 
