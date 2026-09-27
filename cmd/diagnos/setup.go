@@ -74,19 +74,30 @@ func newSetupCallbackCmd() *cobra.Command {
 }
 
 func newSetupServerCmd() *cobra.Command {
-	var listen, apiKey string; var clearKey bool
+	var listen string; var clearKey bool
 	cmd := &cobra.Command{Use: "server", Short: "configure the local pinproc API", RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireRoot(); err != nil { return err }
 		cfg, err := config.Load(""); if err != nil { return err }
 		if cmd.Flags().Changed("listen") { cfg.Server.Listen = strings.TrimSpace(listen) }
-		if clearKey { cfg.Server.APIKey = "" } else if cmd.Flags().Changed("api-key") { cfg.Server.APIKey = apiKey }
+		if clearKey {
+			cfg.Server.APIKey = ""
+		} else if cmd.Flags().Changed("api-key") {
+			return fmt.Errorf("api-key is no longer accepted as a command-line argument; use the interactive prompt or --clear-api-key")
+		} else {
+			reader := bufio.NewReader(cmd.InOrStdin())
+			current := cfg.Server.APIKey
+			label := "Remote API key"
+			if current != "" { fmt.Fprint(cmd.OutOrStdout(), label+" [configured, press Enter to keep]: ") } else { fmt.Fprint(cmd.OutOrStdout(), label+" (press Enter to leave disabled): ") }
+			value, err := readSecret(reader, cmd.OutOrStdout())
+			if err != nil { return err }
+			if value != "" { cfg.Server.APIKey = value }
+		}
 		if err := config.Save(config.ConfigPath, cfg); err != nil { return err }
 		if err := restartService(); err != nil { return err }
 		fmt.Fprintln(cmd.OutOrStdout(), "Server configuration updated. pinproc service restarted.")
 		return nil
 	}}
 	cmd.Flags().StringVar(&listen, "listen", "", "listen address, default 127.0.0.1:8080")
-	cmd.Flags().StringVar(&apiKey, "api-key", "", "remote API bearer key")
 	cmd.Flags().BoolVar(&clearKey, "clear-api-key", false, "disable remote API authentication")
 	return cmd
 }
