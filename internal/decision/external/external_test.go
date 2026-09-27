@@ -12,11 +12,8 @@ import (
 
 func TestProviderUsesStdinStdoutProtocol(t *testing.T) {
 	dir := t.TempDir(); script := filepath.Join(dir, "provider.sh")
-	content := `#!/bin/sh
-cat >/dev/null
-printf '%s\n' '{"protocol_version":1,"answers":{"ok":{"Type":"noul","Noul":1}}}'
-`
-	if err := os.WriteFile(script, []byte(content), 0755); err != nil { t.Fatal(err) }
+	scriptContent := "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"protocol_version\":1,\"answers\":{\"ok\":{\"type\":\"noul\",\"noul\":1}}}'\n"
+	if err := os.WriteFile(script, []byte(scriptContent), 0755); err != nil { t.Fatal(err) }
 	m := provider.Manifest{ProtocolVersion: 1, ID: "test", Name: "Test", Executable: script}
 	p := New(m, map[string]string{"token":"secret"})
 	answers, err := p.Ask(context.Background(), map[string]any{"x":1}, map[string]decision.Question{"ok": {Type: decision.QNoul}})
