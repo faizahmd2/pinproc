@@ -50,11 +50,12 @@ var providerIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 func Load(path string) (*Config, error) {
 	cfg := defaults()
+	explicitPath := path != ""
 	if path == "" { path = DiscoverPath() }
 	if path != "" {
 		if resolved, err := filepath.Abs(path); err == nil { path = resolved }
 		data, err := os.ReadFile(path)
-		if err != nil { if os.IsNotExist(err) { return &cfg, nil }; return nil, err }
+		if err != nil { if os.IsNotExist(err) && !explicitPath { return &cfg, nil }; return nil, err }
 		if err := yaml.Unmarshal(data, &cfg); err != nil { return nil, err }
 	}
 	normalize(&cfg)
