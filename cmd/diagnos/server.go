@@ -96,6 +96,7 @@ func newServeCmd() *cobra.Command {
 				WriteTimeout: 35 * time.Second,
 				IdleTimeout: 60 * time.Second,
 			}
+			if notice := decisionNotice(cfg); notice != "" { logger.Warn("ai reasoning unavailable", "message", notice) }
 			logger.Info("pinproc service started", "addr", listen, "report_dir", dir)
 			return srv.ListenAndServe()
 		},
