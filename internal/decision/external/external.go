@@ -47,6 +47,11 @@ func (p *Provider) Ask(ctx context.Context, state any, questions map[string]deci
 	if res.ProtocolVersion != provider.ProtocolVersion { return nil, fmt.Errorf("provider %q returned unsupported protocol version %d", p.manifest.ID, res.ProtocolVersion) }
 	if res.Error != "" { return nil, fmt.Errorf("provider %q error: %s", p.manifest.ID, res.Error) }
 	if res.Answers == nil { return nil, fmt.Errorf("provider %q returned no answers", p.manifest.ID) }
+	for id, q := range questions {
+		a, ok := res.Answers[id]
+		if !ok { return nil, fmt.Errorf("provider %q omitted answer %q", p.manifest.ID, id) }
+		if a.Type != q.Type { return nil, fmt.Errorf("provider %q answer %q has type %q; expected %q", p.manifest.ID, id, a.Type, q.Type) }
+	}
 	return res.Answers, nil
 }
 
