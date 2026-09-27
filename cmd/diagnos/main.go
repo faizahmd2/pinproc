@@ -15,24 +15,32 @@ var version = "dev"
 var commit = "none"
 var date = "unknown"
 
-// main starts the pinproc service and CLI.
 func main() {
-	if len(os.Args) == 1 {
-		os.Args = append(os.Args, "service", "run")
-	}
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	druntime.Local(logger)
-	root := &cobra.Command{Use: "pinproc", Short: "pinproc — adaptive Linux resource investigation", Version: version}
-	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config path")
-	legacyServe := newServeCmd()
-	legacyServe.Hidden = true
-	investigateCmd := newInvestigateCmd()
-	investigateCmd.Hidden = true
-	captureCmd := newCaptureCmd()
-	captureCmd.Hidden = true
-	replayCmd := newReplayCmd()
-	replayCmd.Hidden = true
-	root.AddCommand(newServiceCmd(), legacyServe, investigateCmd, captureCmd, replayCmd)
+
+	root := &cobra.Command{
+		Use:     "pinproc",
+		Short:   "pinproc — adaptive Linux resource investigation",
+		Version: version,
+	}
+	root.PersistentFlags().StringVar(&cfgPath, "config", "", "configuration path for development commands")
+
+	root.AddCommand(
+		newServiceCmd(),
+		newSetupCmd(),
+		newProviderCmd(),
+		newAIStatusCmd(),
+		func() *cobra.Command {
+			c := newServeCmd()
+			c.Hidden = true
+			return c
+		}(),
+		newInvestigateCmd(),
+		newCaptureCmd(),
+		newReplayCmd(),
+	)
+
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
