@@ -45,7 +45,7 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 		"Memory:",
 		"Disk: sda",
 		"Network: RX",
-		"TCP: in-use 8",
+		"Sockets: 0 · TCP in-use 8",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q:\n%s", want, got)

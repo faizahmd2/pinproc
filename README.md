@@ -6,7 +6,7 @@ pinproc is a small, read-only Linux machine investigator.
 
 It treats the Linux OS as the system boundary. Everything running on it, Node, MySQL, Redis, Nginx, Java, containers, and so on, is an OS resource consumer. pinproc first measures the machine, then follows evidence to the process, thread, cgroup, file descriptor, or socket that best explains the pressure.
 
-It does not require cloud-provider APIs and does not change the machine it investigates.
+It does not require cloud-provider APIs and does not change the machine it investigates. When reporting host identity, pinproc uses the hostname configured by Linux and an IP address actually assigned to the host. If the host owns a public address, it is preferred; otherwise an internal address is reported. pinproc does not try to discover a cloud-provider or NAT address.
 
 ## What it looks at
 

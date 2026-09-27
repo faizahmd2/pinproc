@@ -220,7 +220,7 @@ func (netRetransmit) Eval(ev []contract.Evidence) (Signal, bool) {
 	if !ok || o.Value <= 5 {
 		return Signal{}, false
 	}
-	return Signal{"net.retransmit", contract.DimensionNetwork, 2, fmt.Sprintf("TCP retransmit rate is %.1f/s", o.Value), support(ev, "tcp.retransmit"), true}, true
+	return Signal{"net.retransmit", contract.DimensionNetwork, 2, fmt.Sprintf("TCP retransmit rate is %.1f/s", o.Value), support(ev, "tcp.retrans_rate"), true}, true
 }
 
 type netListenOverflow struct{}
