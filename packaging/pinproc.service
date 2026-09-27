@@ -1,0 +1,33 @@
+[Unit]
+Description=pinproc Linux inspection service
+After=local-fs.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pinproc service run
+WorkingDirectory=/
+User=pinproc
+Group=pinproc
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
+AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
+
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+PrivateTmp=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+NoNewPrivileges=false
+ReadWritePaths=/var/lib/pinproc
+
+[Install]
+WantedBy=multi-user.target
