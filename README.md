@@ -73,9 +73,9 @@ The active configuration contains only provider-neutral fields plus provider-spe
 Inspect configuration safely:
 
 ```bash
-pinproc config show
-pinproc config show --json
-pinproc config validate
+sudo pinproc config show
+sudo pinproc config show --json
+sudo pinproc config validate
 ```
 
 Secrets are redacted from `config show` output.
@@ -96,7 +96,7 @@ Configure one:
 
 ```bash
 sudo pinproc setup ai
-sudo pinproc ai status
+sudo sudo pinproc ai status
 ```
 
 Disable AI:
