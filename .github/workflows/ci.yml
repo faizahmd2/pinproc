@@ -26,6 +26,12 @@ jobs:
       - name: Build
         run: make build
 
+      - name: Verify core has no vendor provider dependency
+        run: |
+          ! go list -deps ./cmd/diagnos | grep -q "/internal/decision/jev"
+          ! strings pinproc | grep -q "api.typesafe.ai"
+          ! strings pinproc | grep -q "/v1/systemone"
+
       - name: Build provider
         run: make build-provider
 
