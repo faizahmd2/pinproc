@@ -37,12 +37,12 @@ func newInvestigateCmd() *cobra.Command {
 				return err
 			}
 			if out == "" {
-				out, err = config.StateDir
+				out = config.StateDir
 			} else {
 				out, err = config.ResolveOutputDirectory(out)
-			}
-			if err != nil {
-				return err
+				if err != nil {
+					return err
+				}
 			}
 			if err := report.EnsureWritable(out); err != nil {
 				return fmt.Errorf("output directory unavailable: %w", err)
