@@ -15,6 +15,7 @@ if [ "${1:-}" = "purge" ]; then
     if [ -e "$DATA_DIR/.pinproc-created-account" ]; then created_user=1; fi
     if [ -e "$DATA_DIR/.pinproc-created-group" ]; then created_group=1; fi
     rm -rf "$CONFIG_DIR" "$DATA_DIR"
+    rmdir /usr/libexec/pinproc/providers /usr/libexec/pinproc /usr/share/pinproc/providers /usr/share/pinproc 2>/dev/null || true
     if [ "$created_user" -eq 1 ] && getent passwd "$USER_NAME" >/dev/null 2>&1; then userdel "$USER_NAME" || true; fi
     if [ "$created_group" -eq 1 ] && getent group "$GROUP_NAME" >/dev/null 2>&1; then groupdel "$GROUP_NAME" || true; fi
 fi
