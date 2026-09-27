@@ -38,8 +38,7 @@ func newProviderListCmd() *cobra.Command {
 				if provider.BinaryInstalled(m, provider.BinaryDir) {
 					status = "ready"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-24s %s
-", m.ID, m.Name, status)
+				fmt.Fprintln(cmd.OutOrStdout(), m.ID, m.Name, status)
 			}
 			return nil
 		},
@@ -56,17 +55,14 @@ func newProviderShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "ID: %s
-Name: %s
-Protocol: %d
-Executable: %s
-", m.ID, m.Name, m.ProtocolVersion, m.Executable)
+			fmt.Fprintln(cmd.OutOrStdout(), "ID:", m.ID)
+			fmt.Fprintln(cmd.OutOrStdout(), "Name:", m.Name)
+			fmt.Fprintln(cmd.OutOrStdout(), "Protocol:", m.ProtocolVersion)
+			fmt.Fprintln(cmd.OutOrStdout(), "Executable:", m.Executable)
 			if m.Description != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Description: %s
-", m.Description)
+				fmt.Fprintln(cmd.OutOrStdout(), "Description:", m.Description)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Binary: %s
-", m.BinaryPath(provider.BinaryDir))
+			fmt.Fprintln(cmd.OutOrStdout(), "Binary:", m.BinaryPath(provider.BinaryDir))
 			if _, err := os.Stat(m.BinaryPath(provider.BinaryDir)); err != nil {
 				fmt.Fprintln(cmd.OutOrStdout(), "Status: unavailable")
 			} else {
@@ -82,8 +78,7 @@ Executable: %s
 				if s.Required {
 					required = "required"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "  %-20s %-8s %s
-", s.Key, s.Type, required)
+				fmt.Fprintln(cmd.OutOrStdout(), " ", s.Key, s.Type, required)
 			}
 			return nil
 		},
@@ -110,13 +105,11 @@ func newAIStatusCmd() *cobra.Command {
 			}
 			m, err := provider.Find(cfg.AI.Provider)
 			if err != nil || !provider.BinaryInstalled(m, provider.BinaryDir) {
-				fmt.Fprintf(cmd.OutOrStdout(), "AI: configured (%s), provider unavailable
-", cfg.AI.Provider)
+				fmt.Fprintln(cmd.OutOrStdout(), "AI: configured ("+cfg.AI.Provider+"), provider unavailable")
 				fmt.Fprintln(cmd.OutOrStdout(), "Decision mode: deterministic rules")
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "AI: configured (%s)
-", m.Name)
+			fmt.Fprintln(cmd.OutOrStdout(), "AI: configured ("+m.Name+")")
 			fmt.Fprintln(cmd.OutOrStdout(), "Decision mode: configured provider")
 			return nil
 		},
