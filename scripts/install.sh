@@ -18,7 +18,7 @@ if [[ -z "$VERSION" ]]; then
     exit 2
 fi
 
-URL="https://github.com/$REPO/releases/download/v${VERSION}/pinproc_${VERSION}_linux_${ARCH}.deb"
+URL="https://github.com/$REPO/releases/download/v${VERSION}/pinproc_${VERSION}_${ARCH}.deb"
 DEB="$TMP_DIR/pinproc.deb"
 curl -fsSL "$URL" -o "$DEB"
 sudo apt install -y "$DEB"
