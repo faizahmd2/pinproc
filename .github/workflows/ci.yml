@@ -46,8 +46,6 @@ jobs:
 
       - name: Smoke install and purge
         run: |
-          # CI diagnostic: show the exact smoke assertion that fails.
-          set -x
           CORE=./dist/pinproc_0.0.0_amd64.deb
           PROVIDER=./dist/pinproc-provider-jev_0.0.0_amd64.deb
           set +e
@@ -64,11 +62,8 @@ jobs:
           test -x /usr/libexec/pinproc/providers/jev
           test -f /usr/lib/systemd/system/pinproc.service
           test -f /usr/share/pinproc/providers/jev.yaml
-          sudo ls -la /etc/pinproc || true
-          sudo stat /etc/pinproc/config.yaml || true
-          sudo journalctl -u pinproc --no-pager -n 20 || true
-          test -f /etc/pinproc/config.yaml
-          test -d /var/lib/pinproc
+          sudo test -f /etc/pinproc/config.yaml
+          sudo test -d /var/lib/pinproc
           getent passwd pinproc
           getent group pinproc
           sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get remove -y pinproc-provider-jev
