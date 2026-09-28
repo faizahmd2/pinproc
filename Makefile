@@ -1,5 +1,5 @@
 # pinproc development and packaging entrypoint
-.PHONY: build build-provider release package-deb package-provider-jev test test-race bench vet fmt fmt-check install clean
+.PHONY: build build-provider release build-package-core build-package-provider package-deb package-provider-jev test test-race bench vet fmt fmt-check install clean
 VERSION ?= 0.1.0
 GOARCH ?= amd64
 NFPM_VERSION ?= v2.47.0
@@ -39,13 +39,19 @@ release:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc-provider-jev_linux_amd64 ./cmd/pinproc-provider-jev
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc-provider-jev_linux_arm64 ./cmd/pinproc-provider-jev
 
-package-deb:
+build-package-core:
 	mkdir -p dist
-	GOOS=linux GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/pinproc.nfpm.yaml --packager deb --target dist/
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc_linux_$(GOARCH) ./cmd/diagnos
 
-package-provider-jev:
+build-package-provider:
 	mkdir -p dist
-	GOOS=linux GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/providers/jev.nfpm.yaml --packager deb --target dist/
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc-provider-jev_linux_$(GOARCH) ./cmd/pinproc-provider-jev
+
+package-deb: build-package-core
+	GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/pinproc.nfpm.yaml --packager deb --target dist/
+
+package-provider-jev: build-package-provider
+	GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/providers/jev.nfpm.yaml --packager deb --target dist/
 
 install: build
 	install -d "$(DESTDIR)/usr/local/bin"

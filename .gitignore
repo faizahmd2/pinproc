@@ -1,5 +1,6 @@
 # Local binaries and release output
 pinproc
+pinproc-provider-*
 dist/
 
 # Runtime investigation evidence
