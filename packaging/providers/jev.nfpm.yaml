@@ -1,5 +1,5 @@
 name: pinproc-provider-jev
-arch: ${GOARCH}
+arch: ${PACKAGE_ARCH}
 platform: linux
 version: ${VERSION}
 version_schema: semver
@@ -13,7 +13,7 @@ depends:
   - pinproc
 
 contents:
-  - src: dist/pinproc-provider-jev_linux_${GOARCH}
+  - src: dist/pinproc-provider-jev_linux_${PACKAGE_ARCH}
     dst: /usr/libexec/pinproc/providers/jev
     expand: true
     file_info:

@@ -1,5 +1,5 @@
 name: pinproc
-arch: ${GOARCH}
+arch: ${PACKAGE_ARCH}
 platform: linux
 version: ${VERSION}
 version_schema: semver
@@ -12,7 +12,7 @@ priority: optional
 umask: 0o022
 
 contents:
-  - src: dist/pinproc_linux_${GOARCH}
+  - src: dist/pinproc_linux_${PACKAGE_ARCH}
     dst: /usr/bin/pinproc
     expand: true
     file_info:

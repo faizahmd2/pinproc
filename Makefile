@@ -48,10 +48,10 @@ build-package-provider:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/pinproc-provider-jev_linux_$(GOARCH) ./cmd/pinproc-provider-jev
 
 package-deb: build-package-core
-	GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/pinproc.nfpm.yaml --packager deb --target dist/
+	PACKAGE_ARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/pinproc.nfpm.yaml --packager deb --target dist/
 
 package-provider-jev: build-package-provider
-	GOARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/providers/jev.nfpm.yaml --packager deb --target dist/
+	PACKAGE_ARCH=$(GOARCH) VERSION=$(VERSION) go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) package --config packaging/providers/jev.nfpm.yaml --packager deb --target dist/
 
 install: build
 	install -d "$(DESTDIR)/usr/local/bin"
