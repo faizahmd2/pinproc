@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/faizahmd2/pinproc/internal/config"
+	"github.com/faizahmd2/pinproc/internal/contract"
 	"github.com/faizahmd2/pinproc/internal/report"
 )
 
@@ -75,5 +76,82 @@ func TestReportReturnsProcessingWithoutPreviousReport(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "\"" + "id" + "\"") {
 		t.Fatalf("unexpected id in response: %s", rec.Body.String())
+	}
+}
+
+
+func TestWantsJSONOnlyWhenTrue(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{name: "default", url: "/report", want: false},
+		{name: "true", url: "/report?json=true", want: true},
+		{name: "uppercase true", url: "/report?json=TRUE", want: true},
+		{name: "false", url: "/report?json=false", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			if got := wantsJSON(req); got != tc.want {
+				t.Fatalf("wantsJSON()=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReportReturnsMarkdownByDefault(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	inv := &contract.Investigation{
+		Host:              "test-host",
+		StartedAt:         now,
+		IncidentCheckedAt: now,
+	}
+	if err := report.Write(inv, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &nativeServer{cfg: &config.Config{}, report: dir}
+	req := httptest.NewRequest(http.MethodGet, "/report", nil)
+	rec := httptest.NewRecorder()
+	s.handleReport(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/markdown; charset=utf-8" {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !strings.HasPrefix(rec.Body.String(), "# pinproc — test-host") {
+		t.Fatalf("unexpected markdown body: %s", rec.Body.String())
+	}
+}
+
+func TestReportReturnsJSONWhenRequested(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	inv := &contract.Investigation{
+		Host:              "test-host",
+		StartedAt:         now,
+		IncidentCheckedAt: now,
+	}
+	if err := report.Write(inv, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &nativeServer{cfg: &config.Config{}, report: dir}
+	req := httptest.NewRequest(http.MethodGet, "/report?json=true", nil)
+	rec := httptest.NewRecorder()
+	s.handleReport(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("content-type=%q", got)
+	}
+	if !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("response is not valid JSON: %s", rec.Body.String())
 	}
 }

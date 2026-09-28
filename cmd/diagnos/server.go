@@ -150,6 +150,8 @@ func (s *nativeServer) handleInvestigate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	jsonResponse := wantsJSON(r)
+
 	if !s.mu.TryLock() {
 		writeHTTPJSON(w, http.StatusAccepted, map[string]any{
 			"status": "processing",
@@ -187,7 +189,11 @@ func (s *nativeServer) handleInvestigate(w http.ResponseWriter, r *http.Request)
 			})
 			return
 		}
-		writeHTTPJSON(w, http.StatusOK, result.Investigation)
+		if jsonResponse {
+			writeHTTPJSON(w, http.StatusOK, result.Investigation)
+		} else {
+			writeHTTPMarkdown(w, http.StatusOK, result.Investigation)
+		}
 	case <-timer.C:
 		writeHTTPJSON(w, http.StatusAccepted, map[string]any{
 			"status": "processing",
@@ -368,7 +374,21 @@ func (s *nativeServer) handleReport(w http.ResponseWriter, r *http.Request) {
 		writeHTTPJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error()})
 		return
 	}
-	writeHTTPJSON(w, http.StatusOK, inv)
+	if wantsJSON(r) {
+		writeHTTPJSON(w, http.StatusOK, inv)
+		return
+	}
+	writeHTTPMarkdown(w, http.StatusOK, inv)
+}
+
+func wantsJSON(r *http.Request) bool {
+	return strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("json")), "true")
+}
+
+func writeHTTPMarkdown(w http.ResponseWriter, status int, inv *contract.Investigation) {
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(report.RenderMarkdown(inv)))
 }
 
 func authorized(r *http.Request, key string) bool {
