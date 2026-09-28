@@ -79,7 +79,14 @@ jobs:
           test -x /usr/bin/pinproc
           test ! -e /usr/libexec/pinproc/providers/jev
           test ! -e /usr/share/pinproc/providers/jev.yaml
-          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get remove -y pinproc
+          echo '--- apt policy before core removal ---'
+          apt-mark showauto pinproc || true
+          apt-get -s remove pinproc
+          echo '--- removing core with dpkg directly ---'
+          sudo dpkg --remove pinproc
+          echo '--- core status after dpkg remove ---'
+          dpkg-query -W -f='${Status}\n${Conffiles}\n' pinproc || true
+          sudo ls -la /etc/pinproc || true
           test -f /etc/pinproc/config.yaml
           test -d /var/lib/pinproc
           sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y "$CORE"
