@@ -31,8 +31,16 @@ contents:
       mode: 0644
       owner: root
       group: root
+  - src: app.yaml
+    dst: /etc/pinproc/config.yaml
+    type: config
+    file_info:
+      mode: 0640
+      owner: root
+      group: pinproc
 
 scripts:
+  preinstall: packaging/scripts/preinstall.sh
   postinstall: packaging/scripts/postinstall.sh
   preremove: packaging/scripts/preremove.sh
   postremove: packaging/scripts/postremove.sh
