@@ -46,6 +46,7 @@ jobs:
 
       - name: Smoke install and purge
         run: |
+          set -x
           CORE=./dist/pinproc_0.0.0_amd64.deb
           PROVIDER=./dist/pinproc-provider-jev_0.0.0_amd64.deb
           set +e
