@@ -48,7 +48,16 @@ jobs:
         run: |
           CORE=./dist/pinproc_0.0.0_amd64.deb
           PROVIDER=./dist/pinproc-provider-jev_0.0.0_amd64.deb
+          set +e
           sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y "$CORE" "$PROVIDER"
+          install_rc=$?
+          set -e
+          if [ "$install_rc" -ne 0 ]; then
+            echo "apt-get returned $install_rc; verify dpkg completed the package installation cleanly"
+            sudo dpkg --audit
+            test "$(dpkg-query -W -f='\${Status}' pinproc)" = "install ok installed"
+            test "$(dpkg-query -W -f='\${Status}' pinproc-provider-jev)" = "install ok installed"
+          fi
           test -x /usr/bin/pinproc
           test -x /usr/libexec/pinproc/providers/jev
           test -f /usr/lib/systemd/system/pinproc.service
