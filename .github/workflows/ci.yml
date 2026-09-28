@@ -73,7 +73,7 @@ jobs:
           test ! -e /usr/share/pinproc/providers/jev.yaml
           sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get remove -y pinproc
           sudo test -f /etc/pinproc/config.yaml
-          sudo test -d /var/lib/pinproc
+          test -d /var/lib/pinproc
           sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y "$CORE"
           sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get purge -y pinproc
           test ! -e /usr/bin/pinproc
