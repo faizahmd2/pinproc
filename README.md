@@ -120,6 +120,18 @@ Configure the API listening port:
 sudo pinproc setup server --listen 127.0.0.1:8080
 ~~~
 
+Configure or update the API key to call pinproc:
+
+~~~bash
+sudo pinproc setup server
+~~~
+
+Clear the remote API key:
+
+~~~bash
+sudo pinproc setup server --clear-api-key
+~~~
+
 ## Remove
 
 ```bash
