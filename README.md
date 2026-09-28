@@ -1,14 +1,258 @@
 # pinproc
 
-pinproc is a read-only Linux machine investigator.
+<p align="center">
+  <strong>Read-only Linux machine investigation for backend systems.</strong><br/>
+  Measure the host, follow the evidence, and produce a developer-readable explanation.
+</p>
 
-It treats the Linux OS as the system boundary. Everything running on the host, Node, MySQL, Redis, Nginx, Java, containers and so on, is an OS resource consumer. pinproc measures the machine first, then follows evidence toward the process, thread, cgroup, file descriptor or socket that best explains the pressure.
+~~~mermaid
+flowchart TD
+    A[Linux host] --> B[Native bounded inspection]
+    B --> C[Typed evidence]
+    C --> D[Deterministic rules]
+    D --> E[Investigation report]
+    D -. optional .-> F[AI provider]
+    F --> E
+~~~
 
-Collection is native and read-only. pinproc does not require a cloud-provider API and does not use a mandatory central service.
+pinproc treats the Linux host as the system boundary. CPU, memory, disk, network, sockets, processes, threads, file descriptors, and cgroups are measured first. The investigation then follows the evidence toward the resource or process that best explains the pressure.
+
+Collection is native and read-only. pinproc does not require a cloud-provider API or a mandatory central service.
+
+## Install
+
+### Ubuntu / Debian
+
+The recommended installation uses the Pinproc APT repository:
+
+~~~bash
+curl -fsSL https://faizahmd2.github.io/pinproc-apt/install.sh | sudo bash
+~~~
+
+This detects amd64 or arm64, configures the signed APT repository, and installs the latest Pinproc package.
+
+Verify:
+
+~~~bash
+pinproc --version
+systemctl status pinproc --no-pager
+~~~
+
+The package installs:
+
+- /usr/bin/pinproc
+- systemd service: pinproc.service
+- configuration: /etc/pinproc/config.yaml
+- runtime data: /var/lib/pinproc
+- dedicated unprivileged pinproc system user and group
+
+### Direct package
+
+Release .deb packages are also available for Linux amd64 and arm64.
+
+~~~bash
+sudo apt install ./pinproc_<version>_<arch>.deb
+~~~
+
+## Quick start
+
+Check the service:
+
+~~~bash
+systemctl status pinproc --no-pager
+~~~
+
+Check the local API:
+
+~~~bash
+curl http://127.0.0.1:8080/health
+~~~
+
+Run an investigation:
+
+~~~bash
+curl http://127.0.0.1:8080/investigate
+~~~
+
+Read the latest report:
+
+~~~bash
+curl http://127.0.0.1:8080/report
+~~~
+
+The API is local by default and listens on 127.0.0.1:8080.
+
+## What pinproc investigates
+
+pinproc collects bounded evidence across the host:
+
+- CPU utilisation and pressure
+- memory and process memory
+- disk I/O and filesystem state
+- network I/O
+- sockets and TCP state
+- processes and threads
+- file descriptors and socket attribution
+- cgroups and process resource pressure
+- process/thread capacity
+- retransmission signals
+- host identity
+
+The goal is not to dump every Linux metric. It follows a bounded investigation path and produces evidence that can be understood by a backend developer.
+
+## CLI
+
+### AI providers
+
+List installed providers:
+
+~~~bash
+pinproc ai list
+~~~
+
+Show the active provider and configuration state:
+
+~~~bash
+pinproc ai status
+~~~
+
+Disable AI reasoning:
+
+~~~bash
+sudo pinproc ai remove
+~~~
+
+AI is optional. Without a configured provider, pinproc continues with deterministic rules.
+
+### Configuration
+
+Show the managed configuration:
+
+~~~bash
+sudo pinproc config show
+sudo pinproc config show --json
+~~~
+
+Validate configuration:
+
+~~~bash
+sudo pinproc config validate
+~~~
+
+Secrets are redacted from configuration output.
+
+### Setup
+
+Configure an AI provider:
+
+~~~bash
+sudo pinproc setup ai
+~~~
+
+Select a provider explicitly:
+
+~~~bash
+sudo pinproc setup ai --provider <provider-id>
+~~~
+
+Configure a report callback:
+
+~~~bash
+sudo pinproc setup callback --url https://example.com/pinproc
+~~~
+
+Disable the callback:
+
+~~~bash
+sudo pinproc setup callback --disable
+~~~
+
+Configure the local API listener:
+
+~~~bash
+sudo pinproc setup server --listen 127.0.0.1:8080
+~~~
+
+Configure or update the remote API key interactively:
+
+~~~bash
+sudo pinproc setup server
+~~~
+
+Clear the remote API key:
+
+~~~bash
+sudo pinproc setup server --clear-api-key
+~~~
+
+Configuration changes restart the pinproc systemd service.
+
+## AI providers
+
+The core binary is provider-neutral. Providers are separate packages that communicate with pinproc through a versioned local JSON protocol.
+
+~~~text
+pinproc
+  │
+  └── provider protocol v1
+        ├── JEV
+        ├── company-internal provider
+        └── local-model provider
+~~~
+
+### JEV provider
+
+Install the provider package:
+
+~~~bash
+sudo apt install pinproc-provider-jev
+~~~
+
+Configure it:
+
+~~~bash
+sudo pinproc setup ai --provider jev
+~~~
+
+The setup command prompts for provider settings and secrets instead of placing them in command-line arguments.
+
+Provider manifests are installed under:
+
+~~~text
+/usr/share/pinproc/providers/
+~~~
+
+Provider executables are installed under:
+
+~~~text
+/usr/libexec/pinproc/providers/
+~~~
+
+See [docs/provider-protocol.md](docs/provider-protocol.md) for the provider protocol.
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| GET /health | Service health |
+| GET /investigate | Start an investigation |
+| GET /report | Read the current/last report |
+
+/investigate accepts optional hint and dimension query parameters. Only one investigation runs at a time.
+
+Reports are stored as:
+
+~~~text
+/var/lib/pinproc/
+├── report.json
+└── state.json
+~~~
+
+Reports are replaced atomically and pinproc does not retain an unbounded report history.
 
 ## Architecture
 
-```text
+~~~text
 Linux kernel state
       ↓
 bounded native reads
@@ -20,163 +264,64 @@ deterministic rules
 optional AI provider
       ↓
 developer-readable report
-```
+~~~
 
-The core binary is provider-neutral. AI providers are separate packages that implement a versioned local JSON protocol. The core does not contain vendor HTTP clients.
+The AI provider is downstream of the bounded OS evidence. Removing all AI providers leaves pinproc operational with deterministic rules.
 
-```text
-pinproc
-  └── provider protocol v1
-        ├── JEV provider
-        ├── company-internal provider
-        └── local-model provider
-```
+## Security model
 
-Removing all AI providers leaves pinproc operational with deterministic rules.
+The Debian package:
 
-## Install
-
-Production packages target Linux amd64 and arm64.
-
-Install a release package directly:
-
-```bash
-sudo apt install ./pinproc_0.1.0_linux_amd64.deb
-```
-
-Or use the optional release installer:
-
-```bash
-curl -fsSL https://github.com/faizahmd2/pinproc/releases/download/v0.1.0/install.sh | PINPROC_VERSION=0.1.0 bash
-```
-
-The package creates a dedicated unprivileged `pinproc` system user and group, installs the systemd service, creates `/var/lib/pinproc`, and creates the managed configuration at `/etc/pinproc/config.yaml`.
-
-The service runs as `pinproc` rather than root. It receives only the Linux capabilities required for read-only host inspection and is writable only to `/var/lib/pinproc`.
-
-## Configuration
-
-Installed configuration is managed through the CLI. End users should not need to edit the configuration file directly.
-
-```bash
-sudo pinproc setup ai
-sudo pinproc setup callback --url https://example.example/pinproc
-sudo pinproc setup callback --disable
-sudo pinproc setup server --listen 127.0.0.1:8080
-sudo pinproc setup server --clear-api-key
-```
-
-Changing configuration restarts the pinproc systemd service so the new configuration becomes active immediately.
-
-The active configuration contains only provider-neutral fields plus provider-specific key/value settings. Vendor-specific configuration belongs to the selected provider package.
-
-Inspect configuration safely:
-
-```bash
-sudo pinproc config show
-sudo pinproc config show --json
-sudo pinproc config validate
-```
-
-Secrets are redacted from `config show` output.
-
-## AI
-
-AI is optional.
-
-Without an AI provider, pinproc continues with deterministic rules and records a small notice that AI is not configured. Configure a provider when you want additional contextual reasoning over the bounded evidence.
-
-List providers:
-
-```bash
-pinproc ai list
-```
-
-Configure one:
-
-```bash
-sudo pinproc setup ai
-sudo sudo pinproc ai status
-```
-
-Disable AI:
-
-```bash
-sudo pinproc ai remove
-```
-
-Provider packages are independent of the core package. For example, the JEV provider is distributed separately as `pinproc-provider-jev` and is not part of the core `pinproc` executable.
-
-## Provider protocol
-
-Provider executables are trusted software installed by the machine administrator. They run with the same `pinproc` service identity and communicate over JSON on standard input/output.
-
-Request:
-
-```json
-{
-  "protocol_version": 1,
-  "action": "ask",
-  "state": {},
-  "questions": {},
-  "config": {}
-}
-```
-
-Response:
-
-```json
-{
-  "protocol_version": 1,
-  "answers": {}
-}
-```
-
-Provider configuration, including secrets, is passed over stdin JSON and is never placed in process arguments.
-
-See [docs/provider-protocol.md](docs/provider-protocol.md).
-
-## API
-
-```http
-GET /health
-GET /investigate
-GET /report
-```
-
-`/investigate` accepts optional `hint` and `dimension` query parameters. One investigation is allowed at a time. The normal budget permits up to eight logical AI decision calls; an individual provider may perform its own transport retries inside one logical call.
-
-## Reports
-
-pinproc keeps one current report and one small state file:
-
-```text
-/var/lib/pinproc/
-├── report.json
-└── state.json
-```
-
-Reports are replaced atomically. pinproc does not retain an unbounded history.
-
-## Host identity
-
-pinproc reports the Linux hostname and an IP address actually assigned to an active non-loopback interface. A public address is preferred when the host owns one; otherwise an internal address is used. pinproc does not ask a cloud provider for identity or try to infer a NAT address.
+- runs the service as the dedicated pinproc user
+- does not require the service to run as root
+- grants only the Linux capabilities needed for host inspection
+- keeps writable runtime state under /var/lib/pinproc
+- passes provider configuration and secrets over local stdin JSON rather than process arguments
 
 ## Package lifecycle
 
-`apt remove pinproc` removes the package and leaves operator configuration/data in place, following normal Debian package behavior.
+~~~bash
+sudo apt remove pinproc
+~~~
 
-`apt purge pinproc` removes the package-owned configuration and runtime data. The dedicated `pinproc` user and group are removed only when this package created them, so an administrator-owned account is not deleted accidentally.
+removes the package while preserving operator configuration/data.
 
-After purge, pinproc's package-owned filesystem paths, service unit, runtime data, configuration and package-created service account are removed. System package-manager/journal history is still controlled by the operating system.
+~~~bash
+sudo apt purge pinproc
+~~~
+
+removes package-owned configuration and runtime data. Package-created service accounts are removed only when the package created them.
 
 ## Development
 
-```bash
+Requirements:
+
+- Go
+- Linux for the native collection layer
+
+Run tests and static checks:
+
+~~~bash
 go test ./...
 go vet ./...
-make build
-make build-provider
-```
+~~~
 
-The Linux collection layer reads `/proc`, `/sys`, cgroups and kernel state directly and is therefore Linux-specific.
+Build the core:
+
+~~~bash
+make build
+~~~
+
+Build the JEV provider:
+
+~~~bash
+make build-provider
+~~~
+
+The Linux collection layer reads /proc, /sys, cgroups, and kernel state directly and is therefore Linux-specific.
+
+## Repository
+
+- [Pinproc](https://github.com/faizahmd2/pinproc)
+- [APT repository](https://faizahmd2.github.io/pinproc-apt/)
+- [Provider protocol](docs/provider-protocol.md)
