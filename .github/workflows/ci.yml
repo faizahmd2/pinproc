@@ -64,6 +64,7 @@ jobs:
           test -f /usr/lib/systemd/system/pinproc.service
           test -f /usr/share/pinproc/providers/jev.yaml
           sudo test -f /etc/pinproc/config.yaml
+          dpkg-query -W -f='${Conffiles}\n' pinproc | grep -Fq ' /etc/pinproc/config.yaml '
           sudo test -d /var/lib/pinproc
           getent passwd pinproc
           getent group pinproc
