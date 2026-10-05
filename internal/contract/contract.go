@@ -287,6 +287,8 @@ type MachineSnapshot struct {
 	CPUs                    int     `json:"cpus,omitempty"`
 	CPUUtilizationPct       float64 `json:"cpu_utilization_pct,omitempty"`
 	Load1                   float64 `json:"load1,omitempty"`
+	Load5                   float64 `json:"load5,omitempty"`
+	Load15                  float64 `json:"load15,omitempty"`
 	MemoryTotalBytes        uint64  `json:"memory_total_bytes,omitempty"`
 	MemoryAvailableBytes    uint64  `json:"memory_available_bytes,omitempty"`
 	MemoryUsedBytes         uint64  `json:"memory_used_bytes,omitempty"`

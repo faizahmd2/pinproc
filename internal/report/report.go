@@ -259,7 +259,8 @@ func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
 		fmt.Fprintf(b, "Uptime: %s\n", humanDuration(m.Uptime))
 	}
 	if s.CPUs > 0 {
-		fmt.Fprintf(b, "CPU: %.0f%% used · load1 %.2f\n", s.CPUUtilizationPct, s.Load1)
+		fmt.Fprintf(b, "CPU: %.0f%% used · load %.2f / %.2f / %.2f (1/5/15m)%s\n",
+			s.CPUUtilizationPct, s.Load1, s.Load5, s.Load15, loadTrend(s.Load1, s.Load15))
 	}
 	if s.MemoryTotalBytes > 0 {
 		fmt.Fprintf(b, "Memory: %s / %s used · %.0f%% · swap %.0f%%\n",
@@ -296,6 +297,22 @@ func detailedDiagnostics(inv *contract.Investigation) bool {
 		}
 	}
 	return false
+}
+
+// loadTrend summarizes whether CPU pressure is building or easing by comparing
+// the 1-minute to the 15-minute load average.
+func loadTrend(load1, load15 float64) string {
+	if load1 <= 0 || load15 <= 0 {
+		return ""
+	}
+	switch {
+	case load1 > load15*1.25:
+		return " · rising"
+	case load1 < load15*0.75:
+		return " · easing"
+	default:
+		return " · steady"
+	}
 }
 
 func kernelShort(kernel string) string {

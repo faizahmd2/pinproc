@@ -41,7 +41,7 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 		"Incident checked: 2026-09-27T21:00:00+05:30",
 		"Hostname: ip-10-0-0-1",
 		"IP: 10.0.0.1",
-		"CPU: 15% used · load1 0.20",
+		"CPU: 15% used · load 0.20 / 0.00 / 0.00 (1/5/15m)",
 		"Memory:",
 		"Disk: sda",
 		"Network: RX",

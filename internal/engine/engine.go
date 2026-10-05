@@ -933,9 +933,15 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 			case "cpu.utilization":
 				s.CPUUtilizationPct = obs.Value
 			case "load.one_per_core":
-				if s.CPUs > 0 {
+				if s.CPUs > 0 && s.Load1 == 0 {
 					s.Load1 = obs.Value * float64(s.CPUs)
 				}
+			case "load.one":
+				s.Load1 = obs.Value
+			case "load.five":
+				s.Load5 = obs.Value
+			case "load.fifteen":
+				s.Load15 = obs.Value
 			case "mem.available_pct":
 				if s.MemoryTotalBytes > 0 {
 					s.MemoryAvailableBytes = uint64(float64(s.MemoryTotalBytes) * obs.Value / 100)
