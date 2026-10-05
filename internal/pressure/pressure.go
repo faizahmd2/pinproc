@@ -7,6 +7,7 @@ package pressure
 import (
 	"bytes"
 	"syscall"
+	"time"
 )
 
 // Levels is a snapshot of the aggregate signals. Stall fields are PSI "some"
@@ -20,6 +21,16 @@ type Levels struct {
 	MemUsedPct   float64 // from MemTotal/MemAvailable
 	SwapUsedPct  float64 // from SwapTotal/SwapFree
 	Load1PerCore float64 // loadavg[0] / cores
+
+	// Network signals (context + the things that actually hurt). Rates are 0 on
+	// the first tick (no baseline).
+	NetRxBps         float64 // sum of non-loopback interface rx bytes/s
+	NetTxBps         float64 // sum of non-loopback interface tx bytes/s
+	TCPRetransPerSec float64 // TCP RetransSegs/s (/proc/net/snmp)
+	TCPInUse         uint64  // /proc/net/sockstat TCP inuse
+	TCPTimeWait      uint64  // /proc/net/sockstat TCP tw
+	TCPOrphan        uint64  // /proc/net/sockstat TCP orphan
+	ConntrackPct     float64 // nf_conntrack_count / nf_conntrack_max * 100 (0 if absent)
 }
 
 // Parse keys hoisted to package level so the calm path allocates nothing.
@@ -44,9 +55,18 @@ type Reader struct {
 	pMemnfo string
 	pLoad   string
 	pStat   string
+	pNetDev string
+	pSnmp   string
+	pSock   string
+	pCtCnt  string
+	pCtMax  string
 	// previous /proc/stat aggregate counters for utilization delta
 	prevBusy, prevTotal uint64
 	havePrev            bool
+	// previous network counters for rate delta
+	prevRx, prevTx, prevRetrans uint64
+	lastNetAt                   time.Time
+	haveNet                     bool
 }
 
 // NewReader returns a Reader. procRoot defaults to /proc; cores is used to
@@ -68,6 +88,11 @@ func NewReader(procRoot string, cores int) *Reader {
 		pMemnfo: procRoot + "/meminfo",
 		pLoad:   procRoot + "/loadavg",
 		pStat:   procRoot + "/stat",
+		pNetDev: procRoot + "/net/dev",
+		pSnmp:   procRoot + "/net/snmp",
+		pSock:   procRoot + "/net/sockstat",
+		pCtCnt:  procRoot + "/sys/net/netfilter/nf_conntrack_count",
+		pCtMax:  procRoot + "/sys/net/netfilter/nf_conntrack_max",
 	}
 }
 
@@ -82,7 +107,43 @@ func (r *Reader) Calm() Levels {
 	r.readMeminfo(&l)
 	l.Load1PerCore = r.load1() / float64(r.cores)
 	l.CPUUtilPct = r.cpuUtil()
+	r.readNet(&l)
 	return l
+}
+
+// readNet fills the network signals. Rates use the delta since the previous tick.
+func (r *Reader) readNet(l *Levels) {
+	now := time.Now()
+	dt := now.Sub(r.lastNetAt).Seconds()
+	var rx, tx uint64
+	if data := r.read(r.pNetDev); data != nil {
+		rx, tx = sumNetDev(data)
+	}
+	var retrans uint64
+	if data := r.read(r.pSnmp); data != nil {
+		retrans = snmpTCPRetrans(data)
+	}
+	if r.haveNet && dt > 0 {
+		if rx >= r.prevRx {
+			l.NetRxBps = float64(rx-r.prevRx) / dt
+		}
+		if tx >= r.prevTx {
+			l.NetTxBps = float64(tx-r.prevTx) / dt
+		}
+		if retrans >= r.prevRetrans {
+			l.TCPRetransPerSec = float64(retrans-r.prevRetrans) / dt
+		}
+	}
+	r.prevRx, r.prevTx, r.prevRetrans, r.lastNetAt, r.haveNet = rx, tx, retrans, now, true
+
+	if data := r.read(r.pSock); data != nil {
+		l.TCPInUse, l.TCPOrphan, l.TCPTimeWait = sockstatTCP(data)
+	}
+	cnt := parseUint(r.read(r.pCtCnt))
+	max := parseUint(r.read(r.pCtMax))
+	if max > 0 {
+		l.ConntrackPct = float64(cnt) / float64(max) * 100
+	}
 }
 
 // cpuUtil computes CPU utilization since the previous Calm tick from the /proc/stat
@@ -253,6 +314,95 @@ func parseUint(b []byte) uint64 {
 
 // parseFloat parses a non-negative decimal (e.g. "12.34") from bytes with no
 // allocation. The kernel values we read are simple fixed-point, no sign/exponent.
+// sumNetDev sums rx (col 1) and tx (col 9) bytes across non-loopback interfaces.
+func sumNetDev(data []byte) (rx, tx uint64) {
+	for len(data) > 0 {
+		var line []byte
+		if nl := bytes.IndexByte(data, '\n'); nl >= 0 {
+			line, data = data[:nl], data[nl+1:]
+		} else {
+			line, data = data, nil
+		}
+		colon := bytes.IndexByte(line, ':')
+		if colon < 0 {
+			continue // header lines have no colon in the iface position
+		}
+		iface := bytes.TrimSpace(line[:colon])
+		if len(iface) == 0 || bytes.Equal(iface, []byte("lo")) {
+			continue
+		}
+		fields := bytes.Fields(line[colon+1:])
+		if len(fields) >= 9 {
+			rx += parseUint(fields[0])
+			tx += parseUint(fields[8])
+		}
+	}
+	return rx, tx
+}
+
+// snmpTCPRetrans extracts Tcp RetransSegs from /proc/net/snmp by matching the
+// header column to the value column (robust to column order across kernels).
+func snmpTCPRetrans(data []byte) uint64 {
+	var header, values []byte
+	for len(data) > 0 {
+		var line []byte
+		if nl := bytes.IndexByte(data, '\n'); nl >= 0 {
+			line, data = data[:nl], data[nl+1:]
+		} else {
+			line, data = data, nil
+		}
+		if !bytes.HasPrefix(line, []byte("Tcp:")) {
+			continue
+		}
+		if header == nil {
+			header = line
+		} else {
+			values = line
+			break
+		}
+	}
+	if header == nil || values == nil {
+		return 0
+	}
+	hf := bytes.Fields(header)
+	vf := bytes.Fields(values)
+	for i, h := range hf {
+		if bytes.Equal(h, []byte("RetransSegs")) && i < len(vf) {
+			return parseUint(vf[i])
+		}
+	}
+	return 0
+}
+
+// sockstatTCP parses the "TCP: inuse N orphan N tw N ..." line of /proc/net/sockstat.
+func sockstatTCP(data []byte) (inuse, orphan, tw uint64) {
+	for len(data) > 0 {
+		var line []byte
+		if nl := bytes.IndexByte(data, '\n'); nl >= 0 {
+			line, data = data[:nl], data[nl+1:]
+		} else {
+			line, data = data, nil
+		}
+		if !bytes.HasPrefix(line, []byte("TCP:")) {
+			continue
+		}
+		f := bytes.Fields(line)
+		// f[0] is "TCP:"; key/value pairs start at index 1.
+		for i := 1; i+1 < len(f); i += 2 {
+			switch string(f[i]) {
+			case "inuse":
+				inuse = parseUint(f[i+1])
+			case "orphan":
+				orphan = parseUint(f[i+1])
+			case "tw":
+				tw = parseUint(f[i+1])
+			}
+		}
+		return inuse, orphan, tw
+	}
+	return 0, 0, 0
+}
+
 func parseFloat(b []byte) float64 {
 	b = bytes.TrimSpace(b)
 	var intPart uint64

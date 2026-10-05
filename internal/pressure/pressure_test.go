@@ -105,3 +105,20 @@ func TestCPUUtilDelta(t *testing.T) {
 		t.Fatalf("util = %v, want ~75", u)
 	}
 }
+
+func TestNetParsers(t *testing.T) {
+	dev := []byte("Inter-|   Receive                    |  Transmit\n face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets\n    lo:  1000      10    0    0    0     0          0         0   1000      10\n  eth0:  5000      50    0    0    0     0          0         0   7000      70\n")
+	rx, tx := sumNetDev(dev)
+	if rx != 5000 || tx != 7000 { // lo excluded
+		t.Fatalf("netdev rx=%d tx=%d, want 5000/7000", rx, tx)
+	}
+	snmp := []byte("Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts\nTcp: 1 200 120000 -1 10 20 0 0 5 100 200 42 0 3\n")
+	if r := snmpTCPRetrans(snmp); r != 42 {
+		t.Fatalf("retrans = %d, want 42", r)
+	}
+	sock := []byte("sockets: used 100\nTCP: inuse 8 orphan 2 tw 5 alloc 9 mem 1\nUDP: inuse 3\n")
+	in, orph, tw := sockstatTCP(sock)
+	if in != 8 || orph != 2 || tw != 5 {
+		t.Fatalf("sockstat inuse=%d orphan=%d tw=%d", in, orph, tw)
+	}
+}
