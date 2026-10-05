@@ -67,10 +67,10 @@ func newServeCmd() *cobra.Command {
 				return err
 			}
 			if err := report.MigrateLegacy(dir); err != nil {
-				return fmt.Errorf("prepare report storage: %w", err)
+				return serviceStartHint(fmt.Errorf("prepare report storage: %w", err))
 			}
 			if err := report.EnsureWritable(dir); err != nil {
-				return fmt.Errorf("data directory unavailable: %w", err)
+				return serviceStartHint(fmt.Errorf("data directory unavailable: %w", err))
 			}
 			if err := recoverServiceState(dir); err != nil {
 				logger.Warn("could not recover previous inspection state", "error", err)
@@ -101,6 +101,16 @@ func newServeCmd() *cobra.Command {
 			return srv.ListenAndServe()
 		},
 	}
+}
+
+// serviceStartHint turns a bare permission error from a hand-run `pinproc` into
+// guidance: the daemon is managed by systemd, and humans read reports with the
+// report command.
+func serviceStartHint(err error) error {
+	if os.IsPermission(err) && os.Geteuid() != 0 {
+		return fmt.Errorf("%w\n\npinproc runs as a managed system service. You usually do not start it by hand.\n  start:        sudo systemctl start pinproc\n  get a report: pinproc report\n  self-check:   sudo pinproc doctor", err)
+	}
+	return err
 }
 
 func recoverServiceState(dir string) error {

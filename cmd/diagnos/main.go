@@ -32,7 +32,7 @@ func main() {
 	captureCmd.Hidden = true
 	replayCmd := newReplayCmd()
 	replayCmd.Hidden = true
-	root.AddCommand(newServiceCmd(), newSetupCmd(), newAICommand(), newConfigCommand(), legacyServe, investigateCmd, captureCmd, replayCmd)
+	root.AddCommand(newServiceCmd(), newSetupCmd(), newAICommand(), newConfigCommand(), newDoctorCmd(), newReportCmd(), legacyServe, investigateCmd, captureCmd, replayCmd)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
