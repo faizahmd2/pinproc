@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -149,6 +150,9 @@ func (r *Resolver) Resolve(ctx context.Context, pid string) (contract.Service, e
 	}
 	svc.ListenPorts = listenerPorts(snap.Reads["fd"], first(snap, "tcp"), first(snap, "tcp6"))
 	svc.LogPaths, svc.ConfigPaths = inferPaths(svc.Cmdline, svc.Cwd, svc.Exe)
+	// Redact secrets passed on the command line before they can enter the report
+	// or be sent to an AI provider. Done after path inference so paths survive.
+	svc.Cmdline = redactCmdline(svc.Cmdline)
 	if svc.Name == "" {
 		svc.Name = "pid:" + pid
 		svc.NameSource = contract.ProvenanceUnknown
@@ -375,6 +379,16 @@ func inferPaths(cmd []string, cwd, exe string) ([]string, []string) {
 		if !strings.HasPrefix(v, "/") {
 			return
 		}
+		// pinproc reads log paths as a privileged service. Canonicalize and
+		// restrict to conventional log locations so a crafted argv (e.g.
+		// "/var/log/../../etc/shadow") cannot turn it into an arbitrary-file read.
+		if log {
+			clean := filepath.Clean(v)
+			if !allowedLogPath(clean) {
+				return
+			}
+			v = clean
+		}
 		if log {
 			if !seenLog[v] {
 				seenLog[v] = true
@@ -395,6 +409,59 @@ func inferPaths(cmd []string, cwd, exe string) ([]string, []string) {
 		}
 	}
 	return logs, cfgs
+}
+
+// allowedLogRoots are the directory trees pinproc will read log tails from.
+var allowedLogRoots = []string{"/var/log/", "/var/lib/", "/var/opt/", "/opt/", "/srv/", "/home/", "/app/", "/data/", "/logs/", "/usr/local/"}
+
+// allowedLogPath reports whether a cleaned absolute path is a conventional log
+// location that pinproc may read. It must be a real file reference (no traversal
+// left after cleaning) under an allowlisted root.
+func allowedLogPath(clean string) bool {
+	if !strings.HasPrefix(clean, "/") || strings.Contains(clean, "/../") || strings.HasSuffix(clean, "/..") {
+		return false
+	}
+	for _, root := range allowedLogRoots {
+		if strings.HasPrefix(clean, root) {
+			return true
+		}
+	}
+	return false
+}
+
+// secretFlagRe matches option names whose value is a secret (…=value form).
+var secretFlagRe = regexp.MustCompile(`(?i)(pass(word|wd)?|pwd|secret|token|api[_-]?key|access[_-]?key|auth|credential|session|private[_-]?key)`)
+
+// secretBareFlags are flags whose following argument is a secret value.
+var secretBareFlags = map[string]bool{
+	"--password": true, "--passwd": true, "--token": true, "--secret": true,
+	"--api-key": true, "--apikey": true, "--access-key": true, "--auth": true,
+	"-p": true, "-w": true,
+}
+
+// redactCmdline masks secret values passed on the command line while keeping the
+// program, flags and non-secret arguments intact for identification.
+func redactCmdline(cmd []string) []string {
+	out := make([]string, len(cmd))
+	for i, arg := range cmd {
+		switch {
+		case i > 0 && secretBareFlags[cmd[i-1]] && !strings.HasPrefix(arg, "-"):
+			out[i] = "***"
+		case strings.HasPrefix(arg, "-") && strings.Contains(arg, "="):
+			eq := strings.Index(arg, "=")
+			if secretFlagRe.MatchString(arg[:eq]) {
+				out[i] = arg[:eq+1] + "***"
+			} else {
+				out[i] = arg
+			}
+		case strings.HasPrefix(arg, "-p") && len(arg) > 2 && !strings.HasPrefix(arg, "--"):
+			// mysql-style -p<secret>
+			out[i] = "-p***"
+		default:
+			out[i] = arg
+		}
+	}
+	return out
 }
 
 func primaryIP() string {

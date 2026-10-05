@@ -14,6 +14,13 @@ RestartSec=2s
 TimeoutStopSec=30s
 KillSignal=SIGTERM
 
+# pinproc runs unprivileged (User=pinproc) but needs three read-only Linux
+# capabilities to do its read-only job across all processes and cgroups:
+#   CAP_DAC_READ_SEARCH — read /proc/<pid>/{io,fd,...} and cgroup files owned by
+#                         other users (bypasses file read permission checks ONLY).
+#   CAP_SYS_PTRACE      — read /proc/<pid>/smaps for other users' processes.
+#   CAP_SYSLOG          — read /dev/kmsg to detect OOM kills.
+# None of these grant write access; the unit is otherwise strictly confined.
 CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
 AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
 
@@ -25,8 +32,11 @@ ProtectControlGroups=true
 PrivateTmp=true
 RestrictNamespaces=true
 RestrictRealtime=true
+RestrictSUIDSGID=true
 LockPersonality=true
-NoNewPrivileges=false
+# The service never needs to gain privileges; keep this on so a child (e.g. an
+# AI provider binary) can never escalate.
+NoNewPrivileges=true
 ReadWritePaths=/var/lib/pinproc
 
 [Install]

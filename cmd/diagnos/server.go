@@ -392,12 +392,12 @@ func writeHTTPMarkdown(w http.ResponseWriter, status int, inv *contract.Investig
 }
 
 func authorized(r *http.Request, key string) bool {
+	// No key configured: the API is open (default local-only posture).
 	if key == "" {
 		return true
 	}
-	if isLoopback(r) {
-		return true
-	}
+	// A configured key is required for every caller, including loopback — any
+	// local user can reach a loopback port, so the key must gate them too.
 	const prefix = "Bearer "
 	value := strings.TrimSpace(r.Header.Get("Authorization"))
 	if strings.HasPrefix(value, prefix) {
