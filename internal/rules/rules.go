@@ -50,11 +50,26 @@ type cpuSaturated struct{}
 func (cpuSaturated) ID() string { return "cpu.saturated" }
 func (cpuSaturated) Eval(ev []contract.Evidence) (Signal, bool) {
 	o, ok := find(ev, "cpu.utilization")
-	l, ok2 := find(ev, "load.one_per_core")
-	if !ok || !ok2 || o.Value <= 85 || l.Value <= 1 {
+	if !ok || o.Value <= 85 {
 		return Signal{}, false
 	}
-	return Signal{"cpu.saturated", contract.DimensionCPU, 2, fmt.Sprintf("CPU is saturated at %.1f%% with load %.2fx per core", o.Value, l.Value), mergeSupport(ev, "cpu.utilization", "load.one_per_core"), true}, true
+	l, hasLoad := find(ev, "load.one_per_core")
+	// Sustained saturation shows up in the 60s load average; a fresh spike shows
+	// up first in PSI (10s window). Fire on either so a just-started runaway is
+	// not reported as "no anomaly" for the first minute.
+	psi, hasPSI := find(ev, "cpu.psi_some_avg10")
+	loadSaturated := hasLoad && l.Value > 1
+	psiSaturated := hasPSI && psi.Value > 20
+	if !loadSaturated && !psiSaturated {
+		return Signal{}, false
+	}
+	stmt := fmt.Sprintf("CPU is saturated at %.1f%%", o.Value)
+	if loadSaturated {
+		stmt += fmt.Sprintf(" with load %.2fx per core", l.Value)
+	} else {
+		stmt += fmt.Sprintf(" (PSI some %.0f%%, load still catching up)", psi.Value)
+	}
+	return Signal{"cpu.saturated", contract.DimensionCPU, 2, stmt, mergeSupport(ev, "cpu.utilization", "load.one_per_core", "cpu.psi_some_avg10"), true}, true
 }
 
 type cpuPSI struct{}
