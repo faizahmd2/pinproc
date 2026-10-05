@@ -53,6 +53,19 @@ type Config struct {
 	WatchWindow  time.Duration `yaml:"watch_window"`
 	RingCapacity int           `yaml:"ring_capacity"`
 	TopN         int           `yaml:"top_n"`
+	// Priority biases which dimension is chosen when several are elevated at once.
+	// CPU and memory are the resources that matter most in practice, so they are
+	// weighted higher — a real CPU/RAM problem wins over a transient io/net spike,
+	// while io/net can still win when they clearly dominate and CPU/RAM are fine.
+	Priority DimWeights `yaml:"priority"`
+}
+
+// DimWeights weights the arm-selection score per dimension.
+type DimWeights struct {
+	CPU float64 `yaml:"cpu"`
+	Mem float64 `yaml:"mem"`
+	IO  float64 `yaml:"io"`
+	Net float64 `yaml:"net"`
 }
 
 // DefaultConfig returns the conservative defaults (the agreed table).
@@ -67,6 +80,7 @@ func DefaultConfig() Config {
 		Cooldown:     2 * time.Minute,
 		WatchWindow:  10 * time.Minute,
 		TopN:         3,
+		Priority:     DimWeights{CPU: 1.0, Mem: 1.0, IO: 0.5, Net: 0.5},
 	}
 }
 
@@ -99,6 +113,9 @@ func (c *Config) Normalize() {
 	}
 	if (c.Net == NetThreshold{}) {
 		c.Net = d.Net
+	}
+	if (c.Priority == DimWeights{}) {
+		c.Priority = d.Priority
 	}
 	if c.RingCapacity <= 0 {
 		c.RingCapacity = int(c.WatchWindow/c.ArmedCadence) + 4
@@ -300,12 +317,34 @@ func (m *Monitor) sustainOf(dim contract.Dimension) time.Duration {
 }
 
 func (m *Monitor) score(dim contract.Dimension, l pressure.Levels) float64 {
+	var raw float64
 	if dim == contract.DimensionNetwork {
-		return netScore(m.cfg.Net, l)
+		raw = netScore(m.cfg.Net, l)
+	} else {
+		th := m.cfg.threshold(dim)
+		lvl, psi := dimValues(l, dim)
+		raw = exceedance(lvl, th.ArmUtil) + exceedance(psi, th.ArmPSI)
 	}
-	th := m.cfg.threshold(dim)
-	lvl, psi := dimValues(l, dim)
-	return exceedance(lvl, th.ArmUtil) + exceedance(psi, th.ArmPSI)
+	return raw * m.weight(dim)
+}
+
+// weight biases selection toward the resources that matter most in practice.
+func (m *Monitor) weight(dim contract.Dimension) float64 {
+	var w float64
+	switch dim {
+	case contract.DimensionMemory:
+		w = m.cfg.Priority.Mem
+	case contract.DimensionIO:
+		w = m.cfg.Priority.IO
+	case contract.DimensionNetwork:
+		w = m.cfg.Priority.Net
+	default:
+		w = m.cfg.Priority.CPU
+	}
+	if w <= 0 {
+		w = 1
+	}
+	return w
 }
 
 func netArmed(th NetThreshold, l pressure.Levels) bool {

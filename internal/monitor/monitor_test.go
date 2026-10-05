@@ -126,3 +126,22 @@ func TestNetworkArmsOnRetrans(t *testing.T) {
 		t.Fatalf("expected arm network on retrans, got %v %v", act, dim)
 	}
 }
+
+func TestPriorityPrefersCPUWhenComparable(t *testing.T) {
+	m := newTestMonitor()
+	// CPU and IO equally elevated (both 10 over their arm thresholds). Raw exceedance
+	// ties, so the CPU priority weight should break it toward CPU.
+	l := pressure.Levels{CPUUtilPct: 90, IOUtilPct: 90}
+	if act, dim, _ := m.decide(time.Unix(0, 0), l); act != actArm || dim != contract.DimensionCPU {
+		t.Fatalf("expected CPU preferred on comparable elevation, got %v %v", act, dim)
+	}
+}
+
+func TestSevereIOStillWinsOverCalmCPU(t *testing.T) {
+	m := newTestMonitor()
+	// CPU not elevated; IO clearly saturated -> IO should arm.
+	l := pressure.Levels{CPUUtilPct: 50, IOUtilPct: 99}
+	if act, dim, _ := m.decide(time.Unix(0, 0), l); act != actArm || dim != contract.DimensionIO {
+		t.Fatalf("expected IO to win when CPU calm, got %v %v", act, dim)
+	}
+}
