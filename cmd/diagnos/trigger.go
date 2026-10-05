@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/faizahmd2/pinproc/internal/aggregate"
 	"github.com/faizahmd2/pinproc/internal/callback"
 	"github.com/faizahmd2/pinproc/internal/capability"
 	"github.com/faizahmd2/pinproc/internal/config"
@@ -67,6 +71,7 @@ func (s *captureSink) Capture(ctx context.Context, c monitor.Capture) {
 		return
 	}
 	inv.Incident = toIncident(c)
+	inv.Incident.Cause = buildCause(ctx, src, inv, c.Dimension)
 	if s.cfg.Narrator.Enabled {
 		if text, ne := narrator.NewRules().Narrate(ctx, inv); ne == nil && narrator.Validate(inv, text) == nil {
 			inv.Narrative = text
@@ -113,6 +118,87 @@ func topContenders(in []dots.Contender, n int) []dots.Contender {
 		return in[:n]
 	}
 	return in
+}
+
+// buildCause aggregates the per-process table into the service responsible for the
+// incident dimension — the definitive, app-level attribution.
+func buildCause(ctx context.Context, src source.Source, inv *contract.Investigation, dim contract.Dimension) *contract.ServiceCause {
+	rows := processRowsFromEvidence(inv)
+	if len(rows) == 0 {
+		return nil
+	}
+	unit := causeUnit(dim)
+	// Value per process for this dimension.
+	val := func(r procRowView) float64 {
+		switch dim {
+		case contract.DimensionMemory:
+			return r.RSS
+		case contract.DimensionIO:
+			return r.IOBPS
+		default:
+			return r.CPUPercent * 100 // fraction-of-core -> percent
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return val(rows[i]) > val(rows[j]) })
+	if len(rows) > 20 {
+		rows = rows[:20]
+	}
+	resolver := identity.New(src)
+	procs := make([]aggregate.Proc, 0, len(rows))
+	for _, r := range rows {
+		v := val(r)
+		if v <= 0 {
+			continue
+		}
+		key, display := resolver.GroupOf(ctx, strconv.Itoa(int(r.PID)))
+		procs = append(procs, aggregate.Proc{PID: int(r.PID), Comm: r.Comm, Key: key, Display: display, Value: v})
+	}
+	svcs := aggregate.Group(procs, 5)
+	if len(svcs) == 0 || svcs[0].Value <= 0 {
+		return nil
+	}
+	top := svcs[0]
+	cause := &contract.ServiceCause{
+		Service: top.Display, Key: top.Key, Dimension: dim, Procs: top.Procs, Value: top.Value, Unit: unit,
+	}
+	for _, c := range top.Components {
+		cause.Components = append(cause.Components, contract.ServiceComponent{PID: c.PID, Comm: c.Comm, Value: c.Value, Pct: c.Pct})
+	}
+	return cause
+}
+
+func causeUnit(dim contract.Dimension) string {
+	switch dim {
+	case contract.DimensionMemory:
+		return "bytes"
+	case contract.DimensionIO:
+		return "bytes_per_sec"
+	default:
+		return "percent"
+	}
+}
+
+type procRowView struct {
+	PID        int64
+	PPID       int64
+	Comm       string
+	RSS        float64
+	CPUPercent float64
+	IOBPS      float64
+}
+
+func processRowsFromEvidence(inv *contract.Investigation) []procRowView {
+	for _, ev := range inv.Evidence {
+		if ev.Capability != "machine.processes" {
+			continue
+		}
+		b, _ := json.Marshal(ev.Facts)
+		var v struct{ Rows []procRowView }
+		if json.Unmarshal(b, &v) == nil {
+			return v.Rows
+		}
+	}
+	return nil
 }
 
 // runMonitor builds and runs the read-only pull trigger until ctx is cancelled.

@@ -338,12 +338,34 @@ type IncidentPoint struct {
 	IOPSI      float64             `json:"io_psi"`
 }
 
+// ServiceComponent is one process's share within its service.
+type ServiceComponent struct {
+	PID   int     `json:"pid"`
+	Comm  string  `json:"comm"`
+	Value float64 `json:"value"`
+	Pct   float64 `json:"pct"`
+}
+
+// ServiceCause is the definitive, app-level attribution: the service (and its
+// components) responsible for the incident's dimension.
+type ServiceCause struct {
+	Service    string             `json:"service"`
+	Key        string             `json:"key"`
+	Dimension  Dimension          `json:"dimension"`
+	Procs      int                `json:"procs"`
+	Value      float64            `json:"value"`
+	Unit       string             `json:"unit"`
+	Components []ServiceComponent `json:"components,omitempty"`
+	Ports      []Port             `json:"ports,omitempty"`
+}
+
 // Incident describes how a captured incident built up before the deep snapshot.
 type Incident struct {
 	Dimension Dimension       `json:"dimension"`
 	StartedAt time.Time       `json:"started_at"`
 	FiredAt   time.Time       `json:"fired_at"`
 	Reason    string          `json:"reason"`
+	Cause     *ServiceCause   `json:"cause,omitempty"`
 	Timeline  []IncidentPoint `json:"timeline,omitempty"`
 }
 

@@ -148,6 +148,7 @@ func RenderMarkdown(inv *contract.Investigation) string {
 	fmt.Fprintf(&b, "Incident checked: %s\n\n", inv.IncidentCheckedAt.Format(time.RFC3339))
 	renderMachineSnapshot(&b, inv)
 
+	renderCause(&b, inv.Incident)
 	renderIncidentTimeline(&b, inv.Incident)
 
 	if len(inv.Hypotheses) > 0 {
@@ -284,6 +285,36 @@ func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
 			s.SocketsUsed, s.TCPInUse, s.TCPTimeWait, s.TCPOrphan, s.TCPListenOverflow)
 	}
 	b.WriteString("\n")
+}
+
+// renderCause states, definitively, which service caused the incident and which of
+// its component processes carried the load — app-level, no probabilities.
+func renderCause(b *strings.Builder, inc *contract.Incident) {
+	if inc == nil || inc.Cause == nil {
+		return
+	}
+	c := inc.Cause
+	fmt.Fprintf(b, "## Cause\n\n%s — %s across %d process(es)\n",
+		c.Service, causeValue(c.Value, c.Unit), c.Procs)
+	for _, comp := range c.Components {
+		fmt.Fprintf(b, "    • %s (pid %d)  %s  (%.0f%% of service)\n",
+			comp.Comm, comp.PID, causeValue(comp.Value, c.Unit), comp.Pct)
+	}
+	for _, p := range c.Ports {
+		fmt.Fprintf(b, "    listening %s:%d\n", p.Proto, p.Port)
+	}
+	b.WriteString("\n")
+}
+
+func causeValue(v float64, unit string) string {
+	switch unit {
+	case "bytes":
+		return formatBytes(uint64(v))
+	case "bytes_per_sec":
+		return fmt.Sprintf("%.1f MB/s", v/1024/1024)
+	default: // percent (of one core)
+		return fmt.Sprintf("%.0f%% CPU (%.1f cores)", v, v/100)
+	}
 }
 
 // renderIncidentTimeline shows how the incident built up before capture, with the

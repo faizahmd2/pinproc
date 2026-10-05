@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -158,6 +158,49 @@ func (r *Resolver) Resolve(ctx context.Context, pid string) (contract.Service, e
 		svc.NameSource = contract.ProvenanceUnknown
 	}
 	return svc, nil
+}
+
+// GroupOf returns a stable grouping key and human display name for a process, for
+// aggregating a whole service's resource use. The key is, in order of preference:
+// its container, its systemd service, or its process group (so a worker pool groups
+// together even as individual children churn, without merging two separate apps).
+func (r *Resolver) GroupOf(ctx context.Context, pid string) (key, display string) {
+	svc, err := r.Resolve(ctx, pid)
+	if err != nil {
+		return "pid:" + pid, "pid:" + pid
+	}
+	switch {
+	case svc.Container != nil && svc.Container.ID != "":
+		d := svc.Container.Name
+		if d == "" {
+			d = svc.Name
+		}
+		if d == "" {
+			d = "container " + shortID(svc.Container.ID)
+		}
+		return "container:" + svc.Container.ID, d
+	case svc.Unit != "":
+		return "unit:" + svc.Unit, svc.Name
+	}
+	if pgid := r.pgid(ctx, pid); pgid > 0 {
+		return "pgid:" + strconv.Itoa(pgid), svc.Name
+	}
+	return "pid:" + pid, svc.Name
+}
+
+func (r *Resolver) pgid(ctx context.Context, pid string) int {
+	if r.src == nil {
+		return 0
+	}
+	snap, err := r.src.Snapshot(ctx, []source.Read{{Key: "stat", Path: "/proc/" + pid + "/stat", Kind: source.ReadFile, Optional: true}})
+	if err != nil {
+		return 0
+	}
+	st, err := procfs.ParsePidStat(first(snap, "stat"))
+	if err != nil {
+		return 0
+	}
+	return int(st.PGRP)
 }
 
 // ResolveMachine resolves top-level host identity.
