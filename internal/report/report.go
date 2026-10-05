@@ -158,8 +158,15 @@ func RenderMarkdown(inv *contract.Investigation) string {
 
 	for i, h := range inv.Hypotheses {
 		fmt.Fprintf(&b, "\n%d. %s [%s] %.2f\n", i+1, h.Statement, h.Grade, h.Confidence)
-		if detail := findingDetail(inv, h); detail != "" {
-			fmt.Fprintf(&b, "   %s\n", detail)
+		// Owner findings already carry the measured proof in the statement; the
+		// generic observation detail would be redundant (and noisier), so skip it.
+		if !strings.HasPrefix(h.Source, "owner:") {
+			if detail := findingDetail(inv, h); detail != "" {
+				fmt.Fprintf(&b, "   %s\n", detail)
+			}
+		}
+		if h.Action != "" {
+			fmt.Fprintf(&b, "   → %s\n", h.Action)
 		}
 		if h.LogContext != nil {
 			line := strings.ReplaceAll(h.LogContext.Line, "\"", "'")

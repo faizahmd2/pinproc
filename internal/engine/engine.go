@@ -139,7 +139,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			inv.StopReason = contract.StopBudgetTime
-			inv.Hypotheses = Synthesize(rules.EvalAll(e.opt.Rules, inv.Evidence), inv.Evidence, e.opt.MaxFindings)
+			inv.Hypotheses = Synthesize(req.Dimension, rules.EvalAll(e.opt.Rules, inv.Evidence), inv.Evidence, e.opt.MaxFindings)
 			inv.Duration = e.opt.Clock().Sub(start)
 			return inv, nil
 		}
@@ -150,7 +150,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	if stop := ShouldStop(e.opt.Clock(), start, inv.Spent, e.opt.Budget); stop != "" {
 		inv.StopReason = stop
 		inv.Duration = e.opt.Clock().Sub(start)
-		inv.Hypotheses = Synthesize(rules.EvalAll(e.opt.Rules, inv.Evidence), inv.Evidence, e.opt.MaxFindings)
+		inv.Hypotheses = Synthesize(req.Dimension, rules.EvalAll(e.opt.Rules, inv.Evidence), inv.Evidence, e.opt.MaxFindings)
 		_ = enrich.Attach(ctx, e.opt.Source, inv.Hypotheses)
 		return inv, nil
 	}
@@ -170,7 +170,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	}
 
 	e.progress("decision")
-	state, _ := MarshalState(inv, signals, inv.Path)
+	state, _ := MarshalState(inv, signals, inv.Path, req.Dimension)
 	ans, err := e.opt.Decision.Ask(ctx, json.RawMessage(state), decision.AssessQuestions())
 	inv.Spent.DecisionCalls++
 	decidedBy := "model:" + e.opt.Decision.Name()
@@ -350,12 +350,16 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 			inv.StopReason = contract.StopSufficientEvidence
 			break
 		}
-		state, _ = MarshalState(inv, signals, inv.Path)
-		answers, err := e.opt.Decision.Ask(ctx, json.RawMessage(state), decision.NextQuestions(candidateKeys(legal)))
+		// The decision provider chooses a capability (a kind of next step); the
+		// engine deterministically chooses which scope to descend into by rank, so
+		// a provider never has to re-derive which process owns the resource.
+		caps := distinctCaps(legal)
+		state, _ = MarshalState(inv, signals, inv.Path, req.Dimension)
+		answers, err := e.opt.Decision.Ask(ctx, json.RawMessage(state), decision.NextQuestions(caps))
 		inv.Spent.DecisionCalls++
 		if err != nil {
 			e.opt.Logger.Warn("decision provider failed; falling back", "error", err)
-			answers, _ = drules.New().Ask(ctx, json.RawMessage(state), decision.NextQuestions(candidateKeys(legal)))
+			answers, _ = drules.New().Ask(ctx, json.RawMessage(state), decision.NextQuestions(caps))
 			inv.Path = append(inv.Path, contract.Step{
 				Depth:      contract.L1Machine,
 				Capability: "decision.next",
@@ -376,8 +380,10 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		if a, ok := answers["next_capability"]; ok && a.Choice != "" {
 			selected = a.Choice
 		}
+		// legal is rank-sorted (NormalizeCandidates), so the first unvisited
+		// candidate for the chosen capability is the highest-ranked owner.
 		for _, c := range legal {
-			if candidateKey(c) == selected && !visited[candidateKey(c)] {
+			if c.Capability == selected && !visited[candidateKey(c)] {
 				visited[candidateKey(c)] = true
 				front = append(front, c)
 				break
@@ -394,7 +400,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 	}
 	inv.NotInvestigated = mergeUnvisited(inv.NotInvestigated, front)
 	e.progress("reporting")
-	inv.Hypotheses = Synthesize(signals, inv.Evidence, e.opt.MaxFindings)
+	inv.Hypotheses = Synthesize(req.Dimension, signals, inv.Evidence, e.opt.MaxFindings)
 	if notices := enrich.Attach(ctx, e.opt.Source, inv.Hypotheses); len(notices) > 0 {
 		for _, n := range notices {
 			inv.Notices = append(inv.Notices, n)
@@ -470,6 +476,11 @@ func registerObserved(inv *contract.Investigation, ev contract.Evidence) {
 					register(contract.Entity{Kind: contract.EntityMount, ID: "mount:" + m.Path, Display: m.Path})
 				}
 			}
+		}
+	}
+	if ev.Capability == "machine.processes" {
+		for _, row := range processRows(ev) {
+			register(contract.Entity{Kind: contract.EntityProcess, ID: fmt.Sprintf("pid:%d", row.PID)})
 		}
 	}
 	register(ev.Entity)
@@ -627,6 +638,24 @@ func (e *Engine) nextCandidates(done []contract.Candidate, inv *contract.Investi
 			if !ok {
 				continue
 			}
+			if c.Accepts == contract.EntityProcess {
+				// Rank candidate processes by the metric this capability cares
+				// about and keep only the top few, so the owner of the resource
+				// is the highest-ranked candidate regardless of decider.
+				for rank, row := range topProcessRows(inv, metricForCapability(id), maxProcessCandidates) {
+					candidate := contract.Candidate{
+						Capability: id,
+						Scope:      contract.Entity{Kind: contract.EntityProcess, ID: fmt.Sprintf("pid:%d", row.PID)},
+						Score:      float64(maxProcessCandidates - rank),
+					}
+					key := candidateKey(candidate)
+					if !seen[key] {
+						seen[key] = true
+						out = append(out, candidate)
+					}
+				}
+				continue
+			}
 			for _, scope := range e.deriveScopes(c.Accepts, parent, inv) {
 				candidate := contract.Candidate{Capability: id, Scope: scope, Score: 1}
 				key := candidateKey(candidate)
@@ -641,6 +670,78 @@ func (e *Engine) nextCandidates(done []contract.Candidate, inv *contract.Investi
 	return out
 }
 
+// maxProcessCandidates bounds how many processes are offered as descent targets.
+const maxProcessCandidates = 3
+
+// procRow is the minimal per-process view used for ranking descent targets.
+type procRow struct {
+	PID        int64
+	CPUPercent float64
+	RSS        float64
+	IOBPS      float64
+}
+
+// processRows extracts the per-process table from machine.processes evidence.
+func processRows(ev contract.Evidence) []procRow {
+	b, _ := json.Marshal(ev.Facts)
+	var v struct{ Rows []procRow }
+	if json.Unmarshal(b, &v) != nil {
+		return nil
+	}
+	return v.Rows
+}
+
+// metricForCapability maps a process capability to the field that best ranks
+// which process owns that resource.
+func metricForCapability(id string) string {
+	switch id {
+	case "process.memory":
+		return "rss"
+	case "process.io":
+		return "io"
+	default:
+		return "cpu"
+	}
+}
+
+// topProcessRows returns the highest processes by the named metric, best first.
+func topProcessRows(inv *contract.Investigation, metric string, k int) []procRow {
+	var rows []procRow
+	for _, ev := range inv.Evidence {
+		if ev.Capability == "machine.processes" {
+			rows = processRows(ev)
+		}
+	}
+	value := func(r procRow) float64 {
+		switch metric {
+		case "rss":
+			return r.RSS
+		case "io":
+			return r.IOBPS
+		default:
+			return r.CPUPercent
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return value(rows[i]) > value(rows[j]) })
+	if len(rows) > k {
+		rows = rows[:k]
+	}
+	return rows
+}
+
+// distinctCaps returns the unique capability ids present in a candidate set.
+func distinctCaps(cands []contract.Candidate) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, c := range cands {
+		if !seen[c.Capability] {
+			seen[c.Capability] = true
+			out = append(out, c.Capability)
+		}
+	}
+	return out
+}
+
 func (e *Engine) deriveScopes(kind contract.EntityKind, parent contract.Candidate, inv *contract.Investigation) []contract.Entity {
 	if kind == contract.EntityMachine {
 		return []contract.Entity{{Kind: kind, ID: "machine"}}
@@ -649,22 +750,6 @@ func (e *Engine) deriveScopes(kind contract.EntityKind, parent contract.Candidat
 	seen := map[string]bool{}
 	for _, ev := range inv.Evidence {
 		switch {
-		case kind == contract.EntityProcess && ev.Capability == "machine.processes":
-			b, _ := json.Marshal(ev.Facts)
-			var v struct {
-				Rows []struct {
-					PID int64
-				}
-			}
-			if json.Unmarshal(b, &v) == nil {
-				for _, row := range v.Rows {
-					id := fmt.Sprintf("pid:%d", row.PID)
-					if !seen[id] {
-						seen[id] = true
-						out = append(out, contract.Entity{Kind: kind, ID: id})
-					}
-				}
-			}
 		case kind == contract.EntityThread && ev.Capability == "process.cpu":
 			b, _ := json.Marshal(ev.Facts)
 			var v struct {

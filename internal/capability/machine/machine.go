@@ -443,15 +443,13 @@ func parseProcesses(in spec.ParseInput) (contract.Evidence, error) {
 		}
 		rows = append(rows, ProcessRow{p.PID, p.PPID, string(p.State), rss, cpu, ioB, p.NumThreads, p.Starttime, uid, p.Comm})
 	}
+	rows = topProcessesByResource(rows, 10)
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].CPUPercent != rows[j].CPUPercent {
 			return rows[i].CPUPercent > rows[j].CPUPercent
 		}
 		return rows[i].PID < rows[j].PID
 	})
-	if len(rows) > 10 {
-		rows = rows[:10]
-	}
 	f := ProcessFacts{Total: total, DState: dstate, ZState: zstate, ThreadTotal: threads, Rows: rows}
 	return ev("ev-machine-processes", "machine.processes", contract.DimensionCPU, contract.L1Machine, f, []contract.Observation{o("procs.total", float64(total), "count"), o("procs.d_state", float64(dstate), "count"), o("procs.z_state", float64(zstate), "count"), o("procs.thread_total", float64(threads), "count")}, "/proc/[0-9]*/stat", "/proc/[0-9]*/status", "/proc/[0-9]*/io"), nil
 }
@@ -470,3 +468,33 @@ func maxInt64(v int64, n int64) int64 {
 }
 
 func osPageSize() int { return os.Getpagesize() }
+
+// topProcessesByResource returns the union of the top-n processes ranked
+// independently by CPU, RSS and I/O, so attribution for any one dimension can
+// still see the owner even if it is idle on the others. The table stays bounded.
+func topProcessesByResource(rows []ProcessRow, n int) []ProcessRow {
+	if len(rows) <= n {
+		return rows
+	}
+	keep := map[int64]bool{}
+	add := func(less func(a, b ProcessRow) bool) {
+		idx := make([]int, len(rows))
+		for i := range rows {
+			idx[i] = i
+		}
+		sort.Slice(idx, func(a, b int) bool { return less(rows[idx[a]], rows[idx[b]]) })
+		for i := 0; i < n && i < len(idx); i++ {
+			keep[rows[idx[i]].PID] = true
+		}
+	}
+	add(func(a, b ProcessRow) bool { return a.CPUPercent > b.CPUPercent })
+	add(func(a, b ProcessRow) bool { return a.RSS > b.RSS })
+	add(func(a, b ProcessRow) bool { return a.IOBPS > b.IOBPS })
+	out := make([]ProcessRow, 0, len(keep))
+	for _, r := range rows {
+		if keep[r.PID] {
+			out = append(out, r)
+		}
+	}
+	return out
+}

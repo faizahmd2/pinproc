@@ -171,6 +171,7 @@ type Hypothesis struct {
 	Contradicts []string    `json:"contradicts,omitempty"`
 	Confidence  float64     `json:"confidence"`
 	Source      string      `json:"source"`
+	Action      string      `json:"action,omitempty"`
 	LogContext  *LogContext `json:"log_context,omitempty"`
 }
 

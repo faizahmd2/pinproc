@@ -8,14 +8,14 @@ import (
 
 func TestMarshalStateBounded(t *testing.T) {
 	inv := &contract.Investigation{Facts: contract.Facts{Kernel: "test"}, Evidence: make([]contract.Evidence, 0)}
-	if _, e := MarshalState(inv, nil, nil); e != nil {
+	if _, e := MarshalState(inv, nil, nil, ""); e != nil {
 		t.Fatal(e)
 	}
 }
 
 func TestMarshalStateCompactsDeepFacts(t *testing.T) {
 	inv := &contract.Investigation{Machine: contract.MachineIdentity{Hostname: "host"}, Evidence: []contract.Evidence{{ID: "deep", Capability: "process.memory_maps", Facts: strings.Repeat("x", 20000)}}}
-	b, err := MarshalState(inv, nil, nil)
+	b, err := MarshalState(inv, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -30,10 +30,13 @@ type State struct {
 	Evidence []ModelEvidence          `json:"evidence"`
 	Signals  []rules.Signal           `json:"signals"`
 	Path     []contract.Step          `json:"path"`
+	Focus    contract.Dimension       `json:"focus,omitempty"`
 }
 
-// MarshalState creates a hard-bounded model-facing representation.
-func MarshalState(inv *contract.Investigation, signals []rules.Signal, path []contract.Step) ([]byte, error) {
+// MarshalState creates a hard-bounded model-facing representation. focus is the
+// operator-requested dimension, if any, used to steer descent when no signal
+// has fired on its own.
+func MarshalState(inv *contract.Investigation, signals []rules.Signal, path []contract.Step, focus contract.Dimension) ([]byte, error) {
 	if inv == nil {
 		return nil, fmt.Errorf("investigation is nil")
 	}
@@ -46,7 +49,7 @@ func MarshalState(inv *contract.Investigation, signals []rules.Signal, path []co
 		for _, ev := range sourceEvidence {
 			modelEvidence = append(modelEvidence, ModelEvidence{ID: ev.ID, Capability: ev.Capability, Entity: ev.Entity, Dimension: ev.Dimension, Level: ev.Level, Observations: ev.Observations, Facts: compactFacts(ev.Facts), Derived: ev.Derived, Sources: ev.Sources, Unavailable: ev.Unavailable, Err: ev.Err})
 		}
-		b, err := json.Marshal(State{Machine: inv.Machine, Facts: inv.Facts, Evidence: modelEvidence, Signals: signals, Path: path})
+		b, err := json.Marshal(State{Machine: inv.Machine, Facts: inv.Facts, Evidence: modelEvidence, Signals: signals, Path: path, Focus: focus})
 		if err != nil {
 			return nil, err
 		}
