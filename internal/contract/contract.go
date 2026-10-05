@@ -245,17 +245,17 @@ func BudgetDeep() Budget { return Budget{6, 60, 180 * time.Second, 32 << 20, 16,
 type StopReason string
 
 const (
-	StopNoAnomaly          StopReason = "no_anomaly"
-	StopSufficientEvidence StopReason = "sufficient_evidence"
-	StopBudgetDepth        StopReason = "budget_depth"
-	StopBudgetTime         StopReason = "budget_time"
-	StopBudgetSteps        StopReason = "budget_steps"
-	StopBudgetBytes        StopReason = "budget_bytes"
+	StopNoAnomaly           StopReason = "no_anomaly"
+	StopSufficientEvidence  StopReason = "sufficient_evidence"
+	StopBudgetDepth         StopReason = "budget_depth"
+	StopBudgetTime          StopReason = "budget_time"
+	StopBudgetSteps         StopReason = "budget_steps"
+	StopBudgetBytes         StopReason = "budget_bytes"
 	StopBudgetDecisionCalls StopReason = "budget_decision_calls"
-	StopDeadEnd            StopReason = "dead_end"
-	StopUnavailable        StopReason = "capability_unavailable"
-	StopError              StopReason = "error"
-	StopInconclusive       StopReason = "inconclusive"
+	StopDeadEnd             StopReason = "dead_end"
+	StopUnavailable         StopReason = "capability_unavailable"
+	StopError               StopReason = "error"
+	StopInconclusive        StopReason = "inconclusive"
 )
 
 // Facts describes host capabilities.
@@ -284,62 +284,95 @@ type MachineIdentity struct {
 
 // MachineSnapshot contains a compact current-state summary for the report.
 type MachineSnapshot struct {
-	CPUs                    int     `json:"cpus,omitempty"`
-	CPUUtilizationPct       float64 `json:"cpu_utilization_pct,omitempty"`
-	Load1                   float64 `json:"load1,omitempty"`
-	Load5                   float64 `json:"load5,omitempty"`
-	Load15                  float64 `json:"load15,omitempty"`
-	MemoryTotalBytes        uint64  `json:"memory_total_bytes,omitempty"`
-	MemoryAvailableBytes    uint64  `json:"memory_available_bytes,omitempty"`
-	MemoryUsedBytes         uint64  `json:"memory_used_bytes,omitempty"`
+	CPUs                     int     `json:"cpus,omitempty"`
+	CPUUtilizationPct        float64 `json:"cpu_utilization_pct,omitempty"`
+	Load1                    float64 `json:"load1,omitempty"`
+	Load5                    float64 `json:"load5,omitempty"`
+	Load15                   float64 `json:"load15,omitempty"`
+	MemoryTotalBytes         uint64  `json:"memory_total_bytes,omitempty"`
+	MemoryAvailableBytes     uint64  `json:"memory_available_bytes,omitempty"`
+	MemoryUsedBytes          uint64  `json:"memory_used_bytes,omitempty"`
 	MemoryUsedPct            float64 `json:"memory_used_pct,omitempty"`
-	SwapUsedPct             float64 `json:"swap_used_pct,omitempty"`
-	RootDiskPath            string  `json:"root_disk_path,omitempty"`
-	RootDiskTotalBytes      uint64  `json:"root_disk_total_bytes,omitempty"`
-	RootDiskUsedBytes       uint64  `json:"root_disk_used_bytes,omitempty"`
-	RootDiskFreeBytes       uint64  `json:"root_disk_free_bytes,omitempty"`
-	RootDiskUsedPct         float64 `json:"root_disk_used_pct,omitempty"`
-	PrimaryDiskDevice       string  `json:"primary_disk_device,omitempty"`
-	DiskReadBPS             float64 `json:"disk_read_bps,omitempty"`
-	DiskWriteBPS            float64 `json:"disk_write_bps,omitempty"`
-	DiskUtilizationPct      float64 `json:"disk_utilization_pct,omitempty"`
-	DiskAwaitMS             float64 `json:"disk_await_ms,omitempty"`
-	NetworkRxBPS            float64 `json:"network_rx_bps,omitempty"`
-	NetworkTxBPS            float64 `json:"network_tx_bps,omitempty"`
+	SwapUsedPct              float64 `json:"swap_used_pct,omitempty"`
+	RootDiskPath             string  `json:"root_disk_path,omitempty"`
+	RootDiskTotalBytes       uint64  `json:"root_disk_total_bytes,omitempty"`
+	RootDiskUsedBytes        uint64  `json:"root_disk_used_bytes,omitempty"`
+	RootDiskFreeBytes        uint64  `json:"root_disk_free_bytes,omitempty"`
+	RootDiskUsedPct          float64 `json:"root_disk_used_pct,omitempty"`
+	PrimaryDiskDevice        string  `json:"primary_disk_device,omitempty"`
+	DiskReadBPS              float64 `json:"disk_read_bps,omitempty"`
+	DiskWriteBPS             float64 `json:"disk_write_bps,omitempty"`
+	DiskUtilizationPct       float64 `json:"disk_utilization_pct,omitempty"`
+	DiskAwaitMS              float64 `json:"disk_await_ms,omitempty"`
+	NetworkRxBPS             float64 `json:"network_rx_bps,omitempty"`
+	NetworkTxBPS             float64 `json:"network_tx_bps,omitempty"`
 	NetworkRetransmitsPerSec float64 `json:"network_retransmits_per_sec,omitempty"`
-	SocketsUsed             uint64  `json:"sockets_used,omitempty"`
-	TCPInUse                uint64  `json:"tcp_in_use,omitempty"`
-	TCPOrphan               uint64  `json:"tcp_orphan,omitempty"`
-	TCPTimeWait             uint64  `json:"tcp_time_wait,omitempty"`
-	TCPAlloc                uint64  `json:"tcp_alloc,omitempty"`
-	TCPListenOverflow       uint64  `json:"tcp_listen_overflow,omitempty"`
+	SocketsUsed              uint64  `json:"sockets_used,omitempty"`
+	TCPInUse                 uint64  `json:"tcp_in_use,omitempty"`
+	TCPOrphan                uint64  `json:"tcp_orphan,omitempty"`
+	TCPTimeWait              uint64  `json:"tcp_time_wait,omitempty"`
+	TCPAlloc                 uint64  `json:"tcp_alloc,omitempty"`
+	TCPListenOverflow        uint64  `json:"tcp_listen_overflow,omitempty"`
+}
+
+// IncidentContender is one process's share of a resource at a timeline point.
+type IncidentContender struct {
+	PID   int     `json:"pid"`
+	Comm  string  `json:"comm"`
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`
+}
+
+// IncidentPoint is one sample on the pre-capture build-up timeline. Armed* describe
+// the dimension that tripped; the remaining fields give the all-resource context so
+// a reader can see what else was moving.
+type IncidentPoint struct {
+	At         time.Time           `json:"at"`
+	ArmedLevel float64             `json:"armed_level"`
+	ArmedPSI   float64             `json:"armed_psi"`
+	Top        []IncidentContender `json:"top,omitempty"`
+	CPUUtil    float64             `json:"cpu_util"`
+	CPUPSI     float64             `json:"cpu_psi"`
+	MemUsed    float64             `json:"mem_used"`
+	MemPSI     float64             `json:"mem_psi"`
+	IOPSI      float64             `json:"io_psi"`
+}
+
+// Incident describes how a captured incident built up before the deep snapshot.
+type Incident struct {
+	Dimension Dimension       `json:"dimension"`
+	StartedAt time.Time       `json:"started_at"`
+	FiredAt   time.Time       `json:"fired_at"`
+	Reason    string          `json:"reason"`
+	Timeline  []IncidentPoint `json:"timeline,omitempty"`
 }
 
 // Investigation is the stable JSON contract.
 type Investigation struct {
-	SchemaVersion    int             `json:"schema_version"`
-	ID               string          `json:"-"`
-	Host             string          `json:"host"`
-	Machine          MachineIdentity `json:"machine"`
-	MachineSnapshot  MachineSnapshot `json:"machine_snapshot"`
-	Facts            Facts           `json:"facts"`
-	Trigger          string          `json:"trigger"`
-	Hint             string          `json:"hint,omitempty"`
-	StartedAt        time.Time       `json:"started_at"`
+	SchemaVersion     int             `json:"schema_version"`
+	ID                string          `json:"-"`
+	Host              string          `json:"host"`
+	Machine           MachineIdentity `json:"machine"`
+	MachineSnapshot   MachineSnapshot `json:"machine_snapshot"`
+	Facts             Facts           `json:"facts"`
+	Trigger           string          `json:"trigger"`
+	Hint              string          `json:"hint,omitempty"`
+	StartedAt         time.Time       `json:"started_at"`
 	IncidentCheckedAt time.Time       `json:"incident_checked_at"`
-	Duration         time.Duration   `json:"duration_ns"`
-	Budget           Budget          `json:"budget"`
-	Spent            Spend           `json:"spent"`
-	Evidence         []Evidence      `json:"evidence"`
-	Hypotheses       []Hypothesis    `json:"hypotheses"`
-	Path             []Step          `json:"path"`
-	NotInvestigated  []Candidate     `json:"not_investigated,omitempty"`
-	Limitations      []string        `json:"limitations,omitempty"`
-	StopReason       StopReason      `json:"stop_reason"`
-	IdentityGaps     int             `json:"identity_gaps,omitempty"`
-	Notices          []Notice        `json:"notices,omitempty"`
-	ObservedEntities []Entity        `json:"observed_entities,omitempty"`
-	Narrative        string          `json:"narrative,omitempty"`
+	Duration          time.Duration   `json:"duration_ns"`
+	Budget            Budget          `json:"budget"`
+	Spent             Spend           `json:"spent"`
+	Evidence          []Evidence      `json:"evidence"`
+	Hypotheses        []Hypothesis    `json:"hypotheses"`
+	Path              []Step          `json:"path"`
+	NotInvestigated   []Candidate     `json:"not_investigated,omitempty"`
+	Limitations       []string        `json:"limitations,omitempty"`
+	StopReason        StopReason      `json:"stop_reason"`
+	IdentityGaps      int             `json:"identity_gaps,omitempty"`
+	Notices           []Notice        `json:"notices,omitempty"`
+	ObservedEntities  []Entity        `json:"observed_entities,omitempty"`
+	Narrative         string          `json:"narrative,omitempty"`
+	Incident          *Incident       `json:"incident,omitempty"`
 }
 
 // JSON returns the stable JSON encoding.

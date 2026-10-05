@@ -20,12 +20,25 @@ type Contender struct {
 	Unit  string  `json:"unit"`
 }
 
-// Dot is one sample on the incident timeline for the armed dimension.
+// Context is the cheap all-resource snapshot recorded with every dot, so the
+// timeline never tunnel-visions on the armed dimension — a CPU incident still
+// shows whether memory or I/O were climbing at the same moment.
+type Context struct {
+	CPUUtil float64 `json:"cpu_util"`
+	CPUPSI  float64 `json:"cpu_psi"`
+	MemUsed float64 `json:"mem_used"`
+	MemPSI  float64 `json:"mem_psi"`
+	IOPSI   float64 `json:"io_psi"`
+}
+
+// Dot is one sample on the incident timeline for the armed dimension. Level/PSI/Top
+// describe the armed dimension; Ctx carries the other resources for context.
 type Dot struct {
 	At    time.Time   `json:"at"`
 	Level float64     `json:"level"` // headline level (util% or used% for the dim)
 	PSI   float64     `json:"psi"`   // PSI some avg10 at this moment
 	Top   []Contender `json:"top,omitempty"`
+	Ctx   Context     `json:"ctx"`
 }
 
 // Ring is a fixed-capacity circular buffer of Dots. Not safe for concurrent use;

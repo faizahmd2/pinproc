@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/faizahmd2/pinproc/internal/monitor"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,6 +45,7 @@ type Config struct {
 	Report struct { MaxFindings int `yaml:"max_findings"` } `yaml:"report"`
 	Server struct { Listen string `yaml:"listen"`; APIKey string `yaml:"api_key"` } `yaml:"server"`
 	Callback CallbackConfig `yaml:"callback"`
+	Monitor monitor.Config `yaml:"monitor"`
 }
 
 var providerIDRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -113,6 +115,7 @@ func defaults() Config {
 func normalize(cfg *Config) {
 	cfg.AI.Provider = strings.TrimSpace(cfg.AI.Provider)
 	if cfg.AI.Config == nil { cfg.AI.Config = map[string]string{} }
+	cfg.Monitor.Normalize()
 }
 
 func ValidProviderID(id string) bool { return providerIDRE.MatchString(strings.TrimSpace(id)) }

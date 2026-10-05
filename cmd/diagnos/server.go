@@ -97,6 +97,18 @@ func newServeCmd() *cobra.Command {
 				IdleTimeout: 60 * time.Second,
 			}
 			if notice := decisionNotice(cfg); notice != "" { logger.Warn("ai reasoning unavailable", "message", notice) }
+
+			// Read-only self-trigger: watch pressure and auto-capture incidents.
+			// Shares the server mutex so an auto-capture and a manual investigation
+			// never run the engine concurrently.
+			monCtx, stopMon := context.WithCancel(context.Background())
+			defer stopMon()
+			go func() {
+				if err := runMonitor(monCtx, cfg, s.report, &s.mu); err != nil && err != context.Canceled {
+					logger.Warn("self-trigger stopped", "error", err)
+				}
+			}()
+
 			logger.Info("pinproc service started", "addr", listen, "report_dir", dir)
 			return srv.ListenAndServe()
 		},

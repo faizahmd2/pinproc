@@ -148,6 +148,8 @@ func RenderMarkdown(inv *contract.Investigation) string {
 	fmt.Fprintf(&b, "Incident checked: %s\n\n", inv.IncidentCheckedAt.Format(time.RFC3339))
 	renderMachineSnapshot(&b, inv)
 
+	renderIncidentTimeline(&b, inv.Incident)
+
 	if len(inv.Hypotheses) > 0 {
 		b.WriteString(inv.Hypotheses[0].Statement)
 	} else {
@@ -282,6 +284,51 @@ func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
 			s.SocketsUsed, s.TCPInUse, s.TCPTimeWait, s.TCPOrphan, s.TCPListenOverflow)
 	}
 	b.WriteString("\n")
+}
+
+// renderIncidentTimeline shows how the incident built up before capture, with the
+// armed dimension's climb, its top contender at each step, and the other resources
+// for context (so a CPU incident still shows memory/io moving).
+func renderIncidentTimeline(b *strings.Builder, inc *contract.Incident) {
+	if inc == nil || len(inc.Timeline) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "## Incident — %s (%s)\n\n", inc.Dimension, inc.Reason)
+	fmt.Fprintf(b, "Built up over %s before capture.\n\n", formatDuration(inc.FiredAt.Sub(inc.StartedAt)))
+	b.WriteString("    +time   armed   top consumer                cpu   mem   io(psi)\n")
+	start := inc.StartedAt
+	for _, p := range inc.Timeline {
+		top := "—"
+		if len(p.Top) > 0 {
+			top = fmt.Sprintf("%s (pid %d) %s", p.Top[0].Comm, p.Top[0].PID, incidentValue(p.Top[0]))
+		}
+		fmt.Fprintf(b, "    %5ds  %5.0f%%  %-26s %4.0f%% %4.0f%% %5.1f\n",
+			int(p.At.Sub(start).Seconds()), p.ArmedLevel, truncate(top, 26), p.CPUUtil, p.MemUsed, p.IOPSI)
+	}
+	b.WriteString("\n")
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	if n <= 1 {
+		return s[:n]
+	}
+	return s[:n-1] + "…"
+}
+
+func incidentValue(c contract.IncidentContender) string {
+	switch c.Unit {
+	case "percent":
+		return fmt.Sprintf("%.0f%%", c.Value)
+	case "bytes":
+		return formatBytes(uint64(c.Value))
+	case "bytes_per_sec":
+		return fmt.Sprintf("%.1f MB/s", c.Value/1024/1024)
+	default:
+		return fmt.Sprintf("%.0f", c.Value)
+	}
 }
 
 func detailedDiagnostics(inv *contract.Investigation) bool {

@@ -279,7 +279,17 @@ func (m *Monitor) pickArm(now time.Time, l pressure.Levels) (contract.Dimension,
 func (m *Monitor) addDot(now time.Time, l pressure.Levels) {
 	dim := m.armedDim
 	lvl, psi := dimValues(l, dim)
-	m.ring.Add(dots.Dot{At: now, Level: lvl, PSI: psi, Top: m.cont.Top(dim, m.cfg.TopN, now)})
+	m.ring.Add(dots.Dot{
+		At:    now,
+		Level: lvl,
+		PSI:   psi,
+		Top:   m.cont.Top(dim, m.cfg.TopN, now),
+		Ctx: dots.Context{
+			CPUUtil: l.CPUUtilPct, CPUPSI: l.CPUStallPct,
+			MemUsed: l.MemUsedPct, MemPSI: l.MemStallPct,
+			IOPSI: l.IOStallPct,
+		},
+	})
 }
 
 // dimValues returns (utilization-or-used level, PSI some) for a dimension.
