@@ -24,11 +24,16 @@ type Contender struct {
 // timeline never tunnel-visions on the armed dimension — a CPU incident still
 // shows whether memory or I/O were climbing at the same moment.
 type Context struct {
-	CPUUtil float64 `json:"cpu_util"`
-	CPUPSI  float64 `json:"cpu_psi"`
-	MemUsed float64 `json:"mem_used"`
-	MemPSI  float64 `json:"mem_psi"`
-	IOPSI   float64 `json:"io_psi"`
+	CPUUtil   float64 `json:"cpu_util"`
+	CPUPSI    float64 `json:"cpu_psi"`
+	MemUsed   float64 `json:"mem_used"`
+	MemPSI    float64 `json:"mem_psi"`
+	IOPSI     float64 `json:"io_psi"`
+	NetRxBps  float64 `json:"net_rx_bps"`
+	NetTxBps  float64 `json:"net_tx_bps"`
+	Retrans   float64 `json:"retrans_per_sec"`
+	Conntrack float64 `json:"conntrack_pct"`
+	TimeWait  uint64  `json:"time_wait"`
 }
 
 // Dot is one sample on the incident timeline for the armed dimension. Level/PSI/Top

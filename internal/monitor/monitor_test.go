@@ -106,3 +106,23 @@ func TestWatchWindowDiscard(t *testing.T) {
 		t.Fatalf("expected window discard, got %v (%s)", act, reason)
 	}
 }
+
+func TestNetworkArmsAndCaptures(t *testing.T) {
+	m := newTestMonitor()
+	t0 := time.Unix(0, 0)
+	// conntrack 85% >= arm 80 -> arm network
+	if act, dim, _ := m.decide(t0, pressure.Levels{ConntrackPct: 85}); act != actArm || dim != contract.DimensionNetwork {
+		t.Fatalf("expected arm network, got %v %v", act, dim)
+	}
+	// conntrack 96% >= cap 95 -> capture
+	if act, _, _ := m.decide(t0.Add(2*time.Second), pressure.Levels{ConntrackPct: 96}); act != actCapture {
+		t.Fatalf("expected network capture, got %v", act)
+	}
+}
+
+func TestNetworkArmsOnRetrans(t *testing.T) {
+	m := newTestMonitor()
+	if act, dim, _ := m.decide(time.Unix(0, 0), pressure.Levels{TCPRetransPerSec: 60}); act != actArm || dim != contract.DimensionNetwork {
+		t.Fatalf("expected arm network on retrans, got %v %v", act, dim)
+	}
+}

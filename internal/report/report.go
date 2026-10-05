@@ -297,8 +297,12 @@ func renderCause(b *strings.Builder, inc *contract.Incident) {
 	fmt.Fprintf(b, "## Cause\n\n%s — %s across %d process(es)\n",
 		c.Service, causeValue(c.Value, c.Unit), c.Procs)
 	for _, comp := range c.Components {
+		name := comp.Comm
+		if name == "" {
+			name = "process"
+		}
 		fmt.Fprintf(b, "    • %s (pid %d)  %s  (%.0f%% of service)\n",
-			comp.Comm, comp.PID, causeValue(comp.Value, c.Unit), comp.Pct)
+			name, comp.PID, causeValue(comp.Value, c.Unit), comp.Pct)
 	}
 	for _, p := range c.Ports {
 		fmt.Fprintf(b, "    listening %s:%d\n", p.Proto, p.Port)
@@ -312,6 +316,8 @@ func causeValue(v float64, unit string) string {
 		return formatBytes(uint64(v))
 	case "bytes_per_sec":
 		return fmt.Sprintf("%.1f MB/s", v/1024/1024)
+	case "connections":
+		return fmt.Sprintf("%.0f connections", v)
 	default: // percent (of one core)
 		return fmt.Sprintf("%.0f%% CPU (%.1f cores)", v, v/100)
 	}

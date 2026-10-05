@@ -21,6 +21,7 @@ import (
 	"github.com/faizahmd2/pinproc/internal/identity"
 	"github.com/faizahmd2/pinproc/internal/monitor"
 	"github.com/faizahmd2/pinproc/internal/narrator"
+	"github.com/faizahmd2/pinproc/internal/netmap"
 	"github.com/faizahmd2/pinproc/internal/pressure"
 	"github.com/faizahmd2/pinproc/internal/report"
 	"github.com/faizahmd2/pinproc/internal/rules"
@@ -123,6 +124,9 @@ func topContenders(in []dots.Contender, n int) []dots.Contender {
 // buildCause aggregates the per-process table into the service responsible for the
 // incident dimension — the definitive, app-level attribution.
 func buildCause(ctx context.Context, src source.Source, inv *contract.Investigation, dim contract.Dimension) *contract.ServiceCause {
+	if dim == contract.DimensionNetwork {
+		return buildNetworkCause(ctx, src)
+	}
 	rows := processRowsFromEvidence(inv)
 	if len(rows) == 0 {
 		return nil
@@ -164,6 +168,79 @@ func buildCause(ctx context.Context, src source.Source, inv *contract.Investigat
 	for _, c := range top.Components {
 		cause.Components = append(cause.Components, contract.ServiceComponent{PID: c.PID, Comm: c.Comm, Value: c.Value, Pct: c.Pct})
 	}
+	return cause
+}
+
+// buildNetworkCause attributes open TCP connections to the owning service, naming
+// the service with the most connections and the ports it listens on. Byte rate per
+// service is not available natively, so this is connection-based (definitive) and
+// the report pairs it with the machine's total bandwidth/retransmits.
+func buildNetworkCause(ctx context.Context, src source.Source) *contract.ServiceCause {
+	conns := netmap.Connections("/proc")
+	if len(conns) == 0 {
+		return nil
+	}
+	owners := netmap.SocketOwners("/proc")
+	resolver := identity.New(src)
+
+	type svcAgg struct {
+		display string
+		conns   int
+		listen  map[int]bool
+		comps   map[int]int // pid -> conn count
+	}
+	byKey := map[string]*svcAgg{}
+	groupCache := map[int][2]string{} // pid -> {key, display}
+	for _, c := range conns {
+		pid, ok := owners[c.Inode]
+		if !ok {
+			continue
+		}
+		kd, cached := groupCache[pid]
+		if !cached {
+			key, disp := resolver.GroupOf(ctx, strconv.Itoa(pid))
+			kd = [2]string{key, disp}
+			groupCache[pid] = kd
+		}
+		a := byKey[kd[0]]
+		if a == nil {
+			a = &svcAgg{display: kd[1], listen: map[int]bool{}, comps: map[int]int{}}
+			byKey[kd[0]] = a
+		}
+		a.conns++
+		a.comps[pid]++
+		if c.Listen {
+			a.listen[c.LocalPort] = true
+		}
+	}
+	// pick the service with the most connections
+	var topKey string
+	top := (*svcAgg)(nil)
+	for k, a := range byKey {
+		if top == nil || a.conns > top.conns {
+			top, topKey = a, k
+		}
+	}
+	if top == nil || top.conns == 0 {
+		return nil
+	}
+	cause := &contract.ServiceCause{
+		Service: top.display, Key: topKey, Dimension: contract.DimensionNetwork,
+		Procs: len(top.comps), Value: float64(top.conns), Unit: "connections",
+	}
+	for pid, n := range top.comps {
+		cause.Components = append(cause.Components, contract.ServiceComponent{
+			PID: pid, Value: float64(n), Pct: float64(n) / float64(top.conns) * 100,
+		})
+	}
+	sort.Slice(cause.Components, func(i, j int) bool { return cause.Components[i].Value > cause.Components[j].Value })
+	if len(cause.Components) > 5 {
+		cause.Components = cause.Components[:5]
+	}
+	for port := range top.listen {
+		cause.Ports = append(cause.Ports, contract.Port{Proto: "tcp", Port: port})
+	}
+	sort.Slice(cause.Ports, func(i, j int) bool { return cause.Ports[i].Port < cause.Ports[j].Port })
 	return cause
 }
 

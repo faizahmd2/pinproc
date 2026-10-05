@@ -25,11 +25,28 @@ type DimThreshold struct {
 	Sustain time.Duration `yaml:"sustain"`
 }
 
+// NetThreshold configures network arming/capture. Network has several independent
+// failure modes (none a single utilization %), so each is its own bound; a 0 bound
+// disables that check. Bandwidth is deliberately not a trigger (no reliable NIC
+// capacity on cloud hosts) — it is context only.
+type NetThreshold struct {
+	RetransArm   float64       `yaml:"retrans_arm"` // TCP retransmits/s
+	RetransCap   float64       `yaml:"retrans_cap"`
+	ConntrackArm float64       `yaml:"conntrack_arm"` // % of nf_conntrack_max
+	ConntrackCap float64       `yaml:"conntrack_cap"`
+	TimeWaitArm  uint64        `yaml:"time_wait_arm"` // TIME_WAIT sockets
+	TimeWaitCap  uint64        `yaml:"time_wait_cap"`
+	OrphanArm    uint64        `yaml:"orphan_arm"`
+	OrphanCap    uint64        `yaml:"orphan_cap"`
+	Sustain      time.Duration `yaml:"sustain"`
+}
+
 // Config is the tunable policy. Zero values fall back to DefaultConfig via Normalize.
 type Config struct {
 	CPU          DimThreshold  `yaml:"cpu"`
 	Mem          DimThreshold  `yaml:"mem"`
 	IO           DimThreshold  `yaml:"io"`
+	Net          NetThreshold  `yaml:"net"`
 	CalmCadence  time.Duration `yaml:"calm_cadence"`
 	ArmedCadence time.Duration `yaml:"armed_cadence"`
 	Cooldown     time.Duration `yaml:"cooldown"`
@@ -44,6 +61,7 @@ func DefaultConfig() Config {
 		CPU:          DimThreshold{ArmUtil: 80, ArmPSI: 20, CapUtil: 90, CapPSI: 40, Sustain: 60 * time.Second},
 		Mem:          DimThreshold{ArmUtil: 85, ArmPSI: 10, CapUtil: 95, CapPSI: 30, Sustain: 60 * time.Second},
 		IO:           DimThreshold{ArmUtil: 0, ArmPSI: 30, CapUtil: 0, CapPSI: 60, Sustain: 30 * time.Second},
+		Net:          NetThreshold{RetransArm: 50, RetransCap: 200, ConntrackArm: 80, ConntrackCap: 95, TimeWaitArm: 20000, TimeWaitCap: 40000, OrphanArm: 1000, OrphanCap: 2000, Sustain: 30 * time.Second},
 		CalmCadence:  10 * time.Second,
 		ArmedCadence: 2 * time.Second,
 		Cooldown:     2 * time.Minute,
@@ -78,6 +96,9 @@ func (c *Config) Normalize() {
 	}
 	if (c.IO == DimThreshold{}) {
 		c.IO = d.IO
+	}
+	if (c.Net == NetThreshold{}) {
+		c.Net = d.Net
 	}
 	if c.RingCapacity <= 0 {
 		c.RingCapacity = int(c.WatchWindow/c.ArmedCadence) + 4
@@ -230,19 +251,17 @@ func (m *Monitor) decide(now time.Time, l pressure.Levels) (action, contract.Dim
 		return actArm, dim, "armed"
 	}
 	dim := m.armedDim
-	th := m.cfg.threshold(dim)
-	lvl, psi := dimValues(l, dim)
-	if crossed(lvl, th.CapUtil) || crossed(psi, th.CapPSI) {
+	if m.captured(dim, l) {
 		m.phase = idle
 		m.lastCapture[dim] = now
 		return actCapture, dim, "crossed capture threshold"
 	}
-	if th.Sustain > 0 && now.Sub(m.armedAt) >= th.Sustain && armedStill(lvl, psi, th) {
+	if s := m.sustainOf(dim); s > 0 && now.Sub(m.armedAt) >= s && m.armed(dim, l) {
 		m.phase = idle
 		m.lastCapture[dim] = now
 		return actCapture, dim, "sustained elevation"
 	}
-	if !armedStill(lvl, psi, th) {
+	if !m.armed(dim, l) {
 		m.phase = idle
 		return actDiscard, dim, "recovered"
 	}
@@ -253,23 +272,77 @@ func (m *Monitor) decide(now time.Time, l pressure.Levels) (action, contract.Dim
 	return actWatch, dim, ""
 }
 
+// armed/captured/sustainOf/score dispatch per dimension so network (which has no
+// single utilization metric) can use its own signals while cpu/mem/io use (util,psi).
+func (m *Monitor) armed(dim contract.Dimension, l pressure.Levels) bool {
+	if dim == contract.DimensionNetwork {
+		return netArmed(m.cfg.Net, l)
+	}
+	th := m.cfg.threshold(dim)
+	lvl, psi := dimValues(l, dim)
+	return crossed(lvl, th.ArmUtil) || crossed(psi, th.ArmPSI)
+}
+
+func (m *Monitor) captured(dim contract.Dimension, l pressure.Levels) bool {
+	if dim == contract.DimensionNetwork {
+		return netCaptured(m.cfg.Net, l)
+	}
+	th := m.cfg.threshold(dim)
+	lvl, psi := dimValues(l, dim)
+	return crossed(lvl, th.CapUtil) || crossed(psi, th.CapPSI)
+}
+
+func (m *Monitor) sustainOf(dim contract.Dimension) time.Duration {
+	if dim == contract.DimensionNetwork {
+		return m.cfg.Net.Sustain
+	}
+	return m.cfg.threshold(dim).Sustain
+}
+
+func (m *Monitor) score(dim contract.Dimension, l pressure.Levels) float64 {
+	if dim == contract.DimensionNetwork {
+		return netScore(m.cfg.Net, l)
+	}
+	th := m.cfg.threshold(dim)
+	lvl, psi := dimValues(l, dim)
+	return exceedance(lvl, th.ArmUtil) + exceedance(psi, th.ArmPSI)
+}
+
+func netArmed(th NetThreshold, l pressure.Levels) bool {
+	return crossed(l.TCPRetransPerSec, th.RetransArm) ||
+		crossed(l.ConntrackPct, th.ConntrackArm) ||
+		crossedU(l.TCPTimeWait, th.TimeWaitArm) ||
+		crossedU(l.TCPOrphan, th.OrphanArm)
+}
+
+func netCaptured(th NetThreshold, l pressure.Levels) bool {
+	return crossed(l.TCPRetransPerSec, th.RetransCap) ||
+		crossed(l.ConntrackPct, th.ConntrackCap) ||
+		crossedU(l.TCPTimeWait, th.TimeWaitCap) ||
+		crossedU(l.TCPOrphan, th.OrphanCap)
+}
+
+func netScore(th NetThreshold, l pressure.Levels) float64 {
+	return exceedance(l.TCPRetransPerSec, th.RetransArm) +
+		exceedance(l.ConntrackPct, th.ConntrackArm) +
+		exceedance(float64(l.TCPTimeWait), float64(th.TimeWaitArm)) +
+		exceedance(float64(l.TCPOrphan), float64(th.OrphanArm))
+}
+
 // pickArm returns the dimension that most exceeds its warn threshold, honouring
 // per-dimension cooldown.
 func (m *Monitor) pickArm(now time.Time, l pressure.Levels) (contract.Dimension, bool) {
 	best := contract.Dimension("")
 	bestScore := 0.0
-	for _, dim := range []contract.Dimension{contract.DimensionCPU, contract.DimensionMemory, contract.DimensionIO} {
+	for _, dim := range []contract.Dimension{contract.DimensionCPU, contract.DimensionMemory, contract.DimensionIO, contract.DimensionNetwork} {
 		if last, ok := m.lastCapture[dim]; ok && now.Sub(last) < m.cfg.Cooldown {
 			continue
 		}
-		th := m.cfg.threshold(dim)
-		lvl, psi := dimValues(l, dim)
-		if !armedStill(lvl, psi, th) {
+		if !m.armed(dim, l) {
 			continue
 		}
-		score := exceedance(lvl, th.ArmUtil) + exceedance(psi, th.ArmPSI)
-		if score > bestScore {
-			bestScore = score
+		if s := m.score(dim, l); s > bestScore {
+			bestScore = s
 			best = dim
 		}
 	}
@@ -287,30 +360,33 @@ func (m *Monitor) addDot(now time.Time, l pressure.Levels) {
 		Ctx: dots.Context{
 			CPUUtil: l.CPUUtilPct, CPUPSI: l.CPUStallPct,
 			MemUsed: l.MemUsedPct, MemPSI: l.MemStallPct,
-			IOPSI: l.IOStallPct,
+			IOPSI:    l.IOStallPct,
+			NetRxBps: l.NetRxBps, NetTxBps: l.NetTxBps,
+			Retrans: l.TCPRetransPerSec, Conntrack: l.ConntrackPct, TimeWait: l.TCPTimeWait,
 		},
 	})
 }
 
-// dimValues returns (utilization-or-used level, PSI some) for a dimension.
+// dimValues returns the headline (level, pressure) pair for a dimension, used for
+// the dot's armed-dimension display. Network's detail lives in the dot context.
 func dimValues(l pressure.Levels, dim contract.Dimension) (lvl, psi float64) {
 	switch dim {
 	case contract.DimensionMemory:
 		return l.MemUsedPct, l.MemStallPct
 	case contract.DimensionIO:
 		return 0, l.IOStallPct
+	case contract.DimensionNetwork:
+		return l.ConntrackPct, l.TCPRetransPerSec
 	default:
 		return l.CPUUtilPct, l.CPUStallPct
 	}
 }
 
-// armedStill reports whether the dimension is still at/above its warn threshold.
-func armedStill(lvl, psi float64, th DimThreshold) bool {
-	return crossed(lvl, th.ArmUtil) || crossed(psi, th.ArmPSI)
-}
-
 // crossed reports value >= bound when bound is enabled (>0).
 func crossed(value, bound float64) bool { return bound > 0 && value >= bound }
+
+// crossedU is crossed for unsigned counts.
+func crossedU(value, bound uint64) bool { return bound > 0 && value >= bound }
 
 func exceedance(value, bound float64) float64 {
 	if bound <= 0 || value < bound {
