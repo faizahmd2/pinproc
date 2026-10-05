@@ -37,10 +37,10 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 	}
 	got := RenderMarkdown(inv)
 	for _, want := range []string{
-		"# pinproc — ip-10-0-0-1",
-		"Incident checked: 2026-09-27T21:00:00+05:30",
-		"Hostname: ip-10-0-0-1",
-		"IP: 10.0.0.1",
+		"pinproc · ip-10-0-0-1 · 10.0.0.1 · 2 vCPU",
+		"27 Sep 2026, 09:00 PM (IST)",
+		"root filesystem is filling",
+		"## Machine",
 		"CPU: 15% used · load 0.20 / 0.00 / 0.00 (1/5/15m)",
 		"Memory:",
 		"Disk: sda",

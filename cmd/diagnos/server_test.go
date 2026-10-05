@@ -123,7 +123,7 @@ func TestReportReturnsMarkdownByDefault(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != "text/markdown; charset=utf-8" {
 		t.Fatalf("content-type=%q", got)
 	}
-	if !strings.HasPrefix(rec.Body.String(), "# pinproc — test-host") {
+	if !strings.HasPrefix(rec.Body.String(), "pinproc · test-host") {
 		t.Fatalf("unexpected markdown body: %s", rec.Body.String())
 	}
 }

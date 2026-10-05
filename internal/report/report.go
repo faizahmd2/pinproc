@@ -141,48 +141,30 @@ func MigrateLegacy(root string) error {
 
 func RenderMarkdown(inv *contract.Investigation) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# pinproc — %s\n\n", displayHost(inv))
 	if inv.IncidentCheckedAt.IsZero() {
 		inv.IncidentCheckedAt = inv.StartedAt
 	}
-	fmt.Fprintf(&b, "Incident checked: %s\n\n", inv.IncidentCheckedAt.Format(time.RFC3339))
-	renderMachineSnapshot(&b, inv)
+	// Header: one identity line (host · ip · vCPU · uptime) + the human time.
+	fmt.Fprintf(&b, "pinproc · %s%s\n", headerIdentity(inv), headerTime(inv))
+	b.WriteString("\n")
 
+	// One-line verdict a service owner can read at a glance.
+	fmt.Fprintf(&b, "%s\n\n", verdict(inv))
+
+	// The definitive cause (service + components + action), then how it built up.
 	renderCause(&b, inv.Incident)
 	renderIncidentTimeline(&b, inv.Incident)
 
-	if len(inv.Hypotheses) > 0 {
-		b.WriteString(inv.Hypotheses[0].Statement)
-	} else {
-		b.WriteString("No material anomaly was established.")
-	}
-	b.WriteString("\n")
-	fmt.Fprintf(&b, "%s · %d levels\n", formatDuration(inv.Duration), inv.Spent.Depth)
+	// Supporting findings — skip the owner finding(s) already stated in ## Cause, so
+	// the report never says the same thing twice.
+	renderFindings(&b, inv)
 
-	for i, h := range inv.Hypotheses {
-		fmt.Fprintf(&b, "\n%d. %s [%s] %.2f\n", i+1, h.Statement, h.Grade, h.Confidence)
-		// Owner findings already carry the measured proof in the statement; the
-		// generic observation detail would be redundant (and noisier), so skip it.
-		if !strings.HasPrefix(h.Source, "owner:") {
-			if detail := findingDetail(inv, h); detail != "" {
-				fmt.Fprintf(&b, "   %s\n", detail)
-			}
-		}
-		if h.Action != "" {
-			fmt.Fprintf(&b, "   → %s\n", h.Action)
-		}
-		if h.LogContext != nil {
-			line := strings.ReplaceAll(h.LogContext.Line, "\"", "'")
-			extra := ""
-			if h.LogContext.Count > 1 {
-				extra = fmt.Sprintf(" (x %d)", h.LogContext.Count)
-			}
-			fmt.Fprintf(&b, "   log: %s — %q%s\n", h.LogContext.Path, line, extra)
-		}
-	}
+	// Runtime machine context (no fixed identity like OS/kernel/arch — it never
+	// changes and only adds noise for a developer who knows their box).
+	renderMachine(&b, inv)
 
 	if detailedDiagnostics(inv) {
-		b.WriteString("\n")
+		b.WriteString("\n## Diagnostics\n\n")
 		if len(inv.Hypotheses) > 0 {
 			renderChain(&b, inv, inv.Hypotheses[0].Entity)
 			if cmds := verifyForTopFinding(inv, inv.Hypotheses[0].Entity); len(cmds) > 0 {
@@ -200,23 +182,116 @@ func RenderMarkdown(inv *contract.Investigation) string {
 		}
 	}
 
-	if len(inv.Limitations) > 0 {
-		b.WriteString("\nLimitations\n")
-		for _, x := range unique(inv.Limitations) {
-			fmt.Fprintf(&b, "   - %s\n", x)
-		}
-	}
-	if len(inv.Notices) > 0 {
-		b.WriteString("\n## Notices\n\n")
+	notes := unique(inv.Limitations)
+	if len(notes) > 0 || len(inv.Notices) > 0 {
+		b.WriteString("\n## Notes\n\n")
 		for _, n := range inv.Notices {
-			fmt.Fprintf(&b, "⚠ %s — %s", n.Capability, n.Message)
+			fmt.Fprintf(&b, "- %s", n.Message)
 			if n.Count > 1 {
 				fmt.Fprintf(&b, " (x%d)", n.Count)
 			}
 			b.WriteString("\n")
 		}
+		for _, x := range notes {
+			fmt.Fprintf(&b, "- %s\n", x)
+		}
 	}
 	return b.String()
+}
+
+// headerIdentity renders "host · ip · N vCPU · up 2h".
+func headerIdentity(inv *contract.Investigation) string {
+	parts := []string{displayHost(inv)}
+	if inv.Machine.PrimaryIP != "" {
+		parts = append(parts, inv.Machine.PrimaryIP)
+	}
+	if inv.Machine.CPUs > 0 {
+		parts = append(parts, fmt.Sprintf("%d vCPU", inv.Machine.CPUs))
+	}
+	if inv.Machine.Uptime > 0 {
+		parts = append(parts, "up "+humanDuration(inv.Machine.Uptime))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// headerTime renders the human, no-dependency timestamp, e.g.
+// "   ·   27 Sep 2026, 09:00 PM (IST)".
+func headerTime(inv *contract.Investigation) string {
+	t := inv.IncidentCheckedAt
+	if t.IsZero() {
+		return ""
+	}
+	s := t.Format("02 Jan 2006, 03:04 PM (MST)")
+	// If the zone resolved to a numeric offset (no tzdata), fall back to a plain,
+	// unambiguous dd-mm-yyyy HH:MM:SS so we never print "(+0530)".
+	if strings.Contains(s, "(+") || strings.Contains(s, "(-") {
+		s = t.Format("02-01-2006 15:04:05")
+	}
+	return "    ·    " + s
+}
+
+// verdict is the single human sentence at the top.
+func verdict(inv *contract.Investigation) string {
+	if inv.Incident != nil && inv.Incident.Cause != nil {
+		c := inv.Incident.Cause
+		return fmt.Sprintf("%s pressure — %s is the cause: %s.", dimWord(c.Dimension), c.Service, causeValue(c.Value, c.Unit))
+	}
+	if len(inv.Hypotheses) > 0 {
+		return inv.Hypotheses[0].Statement + "."
+	}
+	return "No material anomaly — the machine looks healthy."
+}
+
+func dimWord(d contract.Dimension) string {
+	switch d {
+	case contract.DimensionMemory:
+		return "Memory"
+	case contract.DimensionIO:
+		return "Disk I/O"
+	case contract.DimensionNetwork:
+		return "Network"
+	case contract.DimensionScheduling:
+		return "Scheduling"
+	default:
+		return "CPU"
+	}
+}
+
+// renderFindings lists supporting findings, skipping any already stated as the
+// cause so the report does not repeat itself.
+func renderFindings(b *strings.Builder, inv *contract.Investigation) {
+	caused := contract.Dimension("")
+	if inv.Incident != nil && inv.Incident.Cause != nil {
+		caused = inv.Incident.Cause.Dimension
+	}
+	var shown []contract.Hypothesis
+	for _, h := range inv.Hypotheses {
+		// Drop the owner finding for the caused dimension (it is the ## Cause).
+		if caused != "" && h.Dimension == caused && strings.HasPrefix(h.Source, "owner:") {
+			continue
+		}
+		shown = append(shown, h)
+	}
+	if len(shown) == 0 {
+		return
+	}
+	b.WriteString("## Findings\n\n")
+	for _, h := range shown {
+		fmt.Fprintf(b, "- %s", h.Statement)
+		if h.Action != "" {
+			fmt.Fprintf(b, "\n  → %s", h.Action)
+		}
+		if h.LogContext != nil {
+			line := strings.ReplaceAll(h.LogContext.Line, "\"", "'")
+			extra := ""
+			if h.LogContext.Count > 1 {
+				extra = fmt.Sprintf(" (x%d)", h.LogContext.Count)
+			}
+			fmt.Fprintf(b, "\n  log: %s — %q%s", h.LogContext.Path, line, extra)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 }
 
 func displayHost(inv *contract.Investigation) string {
@@ -236,31 +311,15 @@ func isLocalReportHost(host string) bool {
 	return host == "" || strings.EqualFold(host, "localhost") || host == "127.0.0.1"
 }
 
-func renderMachineSnapshot(b *strings.Builder, inv *contract.Investigation) {
+// renderMachine shows only the runtime machine context — the numbers that change.
+// Fixed identity (OS, kernel, arch) is intentionally omitted: it does not change
+// for a developer's known box and only adds noise.
+func renderMachine(b *strings.Builder, inv *contract.Investigation) {
 	if inv == nil {
 		return
 	}
-	m := inv.Machine
 	s := inv.MachineSnapshot
-	b.WriteString("## Machine snapshot\n\n")
-	if m.Hostname != "" {
-		fmt.Fprintf(b, "Hostname: %s\n", m.Hostname)
-	}
-	if m.PrimaryIP != "" {
-		fmt.Fprintf(b, "IP: %s\n", m.PrimaryIP)
-	}
-	if m.OS != "" {
-		fmt.Fprintf(b, "OS: %s\n", m.OS)
-	}
-	if m.Kernel != "" {
-		fmt.Fprintf(b, "Kernel: %s\n", kernelShort(m.Kernel))
-	}
-	if m.Architecture != "" || m.CPUs > 0 {
-		fmt.Fprintf(b, "Arch: %s · CPUs: %d\n", m.Architecture, m.CPUs)
-	}
-	if m.Uptime > 0 {
-		fmt.Fprintf(b, "Uptime: %s\n", humanDuration(m.Uptime))
-	}
+	b.WriteString("## Machine\n\n")
 	if s.CPUs > 0 {
 		fmt.Fprintf(b, "CPU: %.0f%% used · load %.2f / %.2f / %.2f (1/5/15m)%s\n",
 			s.CPUUtilizationPct, s.Load1, s.Load5, s.Load15, loadTrend(s.Load1, s.Load15))
