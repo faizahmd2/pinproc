@@ -38,13 +38,17 @@ type IOFacts struct {
 // NetworkFacts contains interface network evidence.
 type NetworkFacts struct {
 	RxBPS, TxBPS, RxDropRate, RetransRate, ListenOverflowDelta float64
-	SocketsUsed, TCPInUse, TCPOrphan, TCPTimeWait, TCPAlloc float64
+	SocketsUsed, TCPInUse, TCPOrphan, TCPTimeWait, TCPAlloc    float64
 }
 
 // LimitsFacts contains global limit evidence.
 type LimitsFacts struct {
-	FDUsedPct, ThreadUsedPct float64
+	FDUsedPct, ThreadUsedPct                            float64
 	FDUsed, FDMax, PIDUsed, PIDMax, Threads, ThreadsMax uint64
+	ConntrackUsed, ConntrackMax                         uint64
+	ConntrackUsedPct                                    float64
+	EphemeralUsed, EphemeralSize                        uint64
+	EphemeralUsedPct                                    float64
 }
 
 // ProcessRow is one bounded attribution row.
@@ -103,6 +107,11 @@ func Limits() spec.Capability {
 			{Key: "proc.pid_max", Path: "/proc/sys/kernel/pid_max", Kind: source.ReadFile, Optional: true},
 			{Key: "proc.threads_max", Path: "/proc/sys/kernel/threads-max", Kind: source.ReadFile, Optional: true},
 			{Key: "proc.somaxconn", Path: "/proc/sys/net/core/somaxconn", Kind: source.ReadFile, Optional: true},
+			{Key: "conntrack_count", Path: "/proc/sys/net/netfilter/nf_conntrack_count", Kind: source.ReadFile, Optional: true},
+			{Key: "conntrack_max", Path: "/proc/sys/net/netfilter/nf_conntrack_max", Kind: source.ReadFile, Optional: true},
+			{Key: "ip_local_port_range", Path: "/proc/sys/net/ipv4/ip_local_port_range", Kind: source.ReadFile, Optional: true},
+			{Key: "net.tcp", Path: "/proc/net/tcp", Kind: source.ReadFile, MaxBytes: 4 << 20, Optional: true},
+			{Key: "net.tcp6", Path: "/proc/net/tcp6", Kind: source.ReadFile, MaxBytes: 4 << 20, Optional: true},
 			{Key: "pid.stat", Path: "/proc/[0-9]*/stat", Kind: source.ReadGlob, MaxBytes: 4096, Optional: true},
 		}
 	}, Parse: parseLimits}
@@ -336,6 +345,71 @@ func parseNetwork(in spec.ParseInput) (contract.Evidence, error) {
 		"/proc/net/dev", "/proc/net/snmp", "/proc/net/netstat", "/proc/net/sockstat"), nil
 }
 
+func u64str(s string) uint64 {
+	v, _ := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
+	return v
+}
+
+// parsePortRange parses "32768 60999" from ip_local_port_range.
+func parsePortRange(b []byte) (lo, hi uint64, ok bool) {
+	fields := strings.Fields(string(b))
+	if len(fields) < 2 {
+		return 0, 0, false
+	}
+	lo, _ = strconv.ParseUint(fields[0], 10, 64)
+	hi, _ = strconv.ParseUint(fields[1], 10, 64)
+	return lo, hi, lo > 0 && hi >= lo
+}
+
+// countEphemeral counts TCP sockets whose local port falls in the ephemeral range,
+// approximating outbound-port consumption (the "cannot assign requested address"
+// failure). Local port is the hex after ':' in column 2 of /proc/net/tcp.
+func countEphemeral(data []byte, lo, hi uint64) uint64 {
+	if data == nil {
+		return 0
+	}
+	var n uint64
+	first := true
+	for len(data) > 0 {
+		var line []byte
+		if nl := bytesIndexByte(data, '\n'); nl >= 0 {
+			line, data = data[:nl], data[nl+1:]
+		} else {
+			line, data = data, nil
+		}
+		if first {
+			first = false
+			continue
+		}
+		fields := strings.Fields(string(line))
+		if len(fields) < 2 {
+			continue
+		}
+		local := fields[1]
+		colon := strings.LastIndexByte(local, ':')
+		if colon < 0 {
+			continue
+		}
+		port, err := strconv.ParseUint(local[colon+1:], 16, 32)
+		if err != nil {
+			continue
+		}
+		if port >= lo && port <= hi {
+			n++
+		}
+	}
+	return n
+}
+
+func bytesIndexByte(b []byte, c byte) int {
+	for i := 0; i < len(b); i++ {
+		if b[i] == c {
+			return i
+		}
+	}
+	return -1
+}
+
 func parseLimits(in spec.ParseInput) (contract.Evidence, error) {
 	var f LimitsFacts
 	if b := first(in.Sample.T1, "proc.file_nr"); len(b) > 0 {
@@ -365,6 +439,19 @@ func parseLimits(in spec.ParseInput) (contract.Evidence, error) {
 	if f.ThreadsMax > 0 {
 		f.ThreadUsedPct = float64(f.Threads) / float64(f.ThreadsMax) * 100
 	}
+	f.ConntrackUsed = u64str(string(first(in.Sample.T1, "conntrack_count")))
+	f.ConntrackMax = u64str(string(first(in.Sample.T1, "conntrack_max")))
+	if f.ConntrackMax > 0 {
+		f.ConntrackUsedPct = float64(f.ConntrackUsed) / float64(f.ConntrackMax) * 100
+	}
+	if lo, hi, ok := parsePortRange(first(in.Sample.T1, "ip_local_port_range")); ok {
+		f.EphemeralSize = hi - lo + 1
+		f.EphemeralUsed = countEphemeral(first(in.Sample.T1, "net.tcp"), lo, hi) +
+			countEphemeral(first(in.Sample.T1, "net.tcp6"), lo, hi)
+		if f.EphemeralSize > 0 {
+			f.EphemeralUsedPct = float64(f.EphemeralUsed) / float64(f.EphemeralSize) * 100
+		}
+	}
 	return ev("ev-machine-limits", "machine.limits", contract.DimensionLimits, contract.L1Machine, f,
 		[]contract.Observation{
 			o("limits.active_processes", float64(f.PIDUsed), "count"),
@@ -373,8 +460,10 @@ func parseLimits(in spec.ParseInput) (contract.Evidence, error) {
 			o("limits.threads_max", float64(f.ThreadsMax), "count"),
 			o("limits.thread_used_pct", f.ThreadUsedPct, "percent"),
 			o("limits.fd_used_pct", f.FDUsedPct, "percent"),
+			o("limits.conntrack_used_pct", f.ConntrackUsedPct, "percent"),
+			o("limits.ephemeral_used_pct", f.EphemeralUsedPct, "percent"),
 		},
-		"/proc/sys/fs/file-nr", "/proc/sys/kernel/pid_max", "/proc/sys/kernel/threads-max", "/proc/sys/net/core/somaxconn", "/proc/[0-9]*/stat"), nil
+		"/proc/sys/fs/file-nr", "/proc/sys/kernel/pid_max", "/proc/sys/kernel/threads-max", "/proc/sys/net/core/somaxconn", "/proc/sys/net/netfilter/nf_conntrack_count", "/proc/sys/net/ipv4/ip_local_port_range", "/proc/net/tcp", "/proc/[0-9]*/stat"), nil
 
 }
 
@@ -414,11 +503,15 @@ func parseProcesses(in spec.ParseInput) (contract.Evidence, error) {
 		if p.RSS > 0 {
 			rss = uint64(p.RSS) * uint64(osPageSize())
 		}
+		// The stat, io and status reads are separate globs keyed by their own full
+		// paths (/proc/<pid>/stat vs /io vs /status), so correlate by deriving the
+		// sibling path from the stat path — not by reusing the stat key.
+		base := strings.TrimSuffix(path, "stat")
 		ioB := 0.0
-		if x, ok := i1[path]; ok {
+		if x, ok := i1[base+"io"]; ok {
 			nn, pe := procfs.ParsePidIO(x)
 			if pe == nil {
-				if y, ok2 := i0[path]; ok2 {
+				if y, ok2 := i0[base+"io"]; ok2 {
 					oo, pe2 := procfs.ParsePidIO(y)
 					if pe2 == nil {
 						ioB = float64(du(oo.ReadBytes+oo.WriteBytes, nn.ReadBytes+nn.WriteBytes)) / sec
@@ -427,7 +520,7 @@ func parseProcesses(in spec.ParseInput) (contract.Evidence, error) {
 			}
 		}
 		uid := uint64(0)
-		if x, ok := sts[path]; ok {
+		if x, ok := sts[base+"status"]; ok {
 			ss, pe := procfs.ParsePidStatus(x)
 			if pe == nil {
 				uid = ss.Uid[0]

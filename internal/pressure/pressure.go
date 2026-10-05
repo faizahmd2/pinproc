@@ -14,9 +14,12 @@ import (
 // avg10 percentages (time at least one task waited for the resource in the last
 // 10s). Utilization fields are percentages of capacity.
 type Levels struct {
-	CPUStallPct  float64 // /proc/pressure/cpu    some avg10
-	MemStallPct  float64 // /proc/pressure/memory some avg10
-	IOStallPct   float64 // /proc/pressure/io     some avg10
+	CPUStallPct float64 // /proc/pressure/cpu    some avg10
+	MemStallPct float64 // /proc/pressure/memory some avg10
+	IOStallPct  float64 // /proc/pressure/io     some avg10
+	IOUtilPct   float64 // busiest disk util% (diskstats io_ticks delta) — the
+	//                      "approaching capacity" signal PSI misses on fast disks
+	IODevice     string  // busiest disk device name
 	CPUUtilPct   float64 // from /proc/stat delta between ticks (0 on first tick)
 	MemUsedPct   float64 // from MemTotal/MemAvailable
 	SwapUsedPct  float64 // from SwapTotal/SwapFree
@@ -55,6 +58,7 @@ type Reader struct {
 	pMemnfo string
 	pLoad   string
 	pStat   string
+	pDisk   string
 	pNetDev string
 	pSnmp   string
 	pSock   string
@@ -67,6 +71,10 @@ type Reader struct {
 	prevRx, prevTx, prevRetrans uint64
 	lastNetAt                   time.Time
 	haveNet                     bool
+	// previous disk io_ticks per device for util delta
+	prevDisk   map[string]uint64
+	lastDiskAt time.Time
+	haveDisk   bool
 }
 
 // NewReader returns a Reader. procRoot defaults to /proc; cores is used to
@@ -88,6 +96,7 @@ func NewReader(procRoot string, cores int) *Reader {
 		pMemnfo: procRoot + "/meminfo",
 		pLoad:   procRoot + "/loadavg",
 		pStat:   procRoot + "/stat",
+		pDisk:   procRoot + "/diskstats",
 		pNetDev: procRoot + "/net/dev",
 		pSnmp:   procRoot + "/net/snmp",
 		pSock:   procRoot + "/net/sockstat",
@@ -107,8 +116,100 @@ func (r *Reader) Calm() Levels {
 	r.readMeminfo(&l)
 	l.Load1PerCore = r.load1() / float64(r.cores)
 	l.CPUUtilPct = r.cpuUtil()
+	l.IODevice, l.IOUtilPct = r.ioUtil()
 	r.readNet(&l)
 	return l
+}
+
+// ioUtil returns the busiest whole-disk device and its utilization % since the
+// previous tick, from /proc/diskstats io_ticks (ms the device was busy). This is
+// the signal that catches a saturated disk even when io PSI stays low (fast/cloud
+// disks rarely stall tasks).
+func (r *Reader) ioUtil() (device string, util float64) {
+	data := r.read(r.pDisk)
+	if data == nil {
+		return "", 0
+	}
+	now := time.Now()
+	dtms := now.Sub(r.lastDiskAt).Milliseconds()
+	cur := map[string]uint64{}
+	type row struct {
+		name  string
+		ticks uint64
+	}
+	var rows []row
+	for len(data) > 0 {
+		var line []byte
+		if nl := bytes.IndexByte(data, '\n'); nl >= 0 {
+			line, data = data[:nl], data[nl+1:]
+		} else {
+			line, data = data, nil
+		}
+		f := bytes.Fields(line)
+		if len(f) < 13 {
+			continue
+		}
+		name := string(f[2])
+		if skipDisk(name) {
+			continue
+		}
+		ticks := parseUint(f[12]) // field 13: ms doing I/O (io_ticks)
+		cur[name] = ticks
+		rows = append(rows, row{name, ticks})
+	}
+	// Whole disks only: drop any device that is a prefix-parent's partition.
+	best, bestUtil := "", 0.0
+	if r.haveDisk && dtms > 0 {
+		for _, rw := range rows {
+			if isPartition(rw.name, cur) {
+				continue
+			}
+			prev, ok := r.prevDisk[rw.name]
+			if !ok || rw.ticks < prev {
+				continue
+			}
+			u := float64(rw.ticks-prev) / float64(dtms) * 100
+			if u > bestUtil {
+				bestUtil, best = u, rw.name
+			}
+		}
+	}
+	r.prevDisk, r.lastDiskAt, r.haveDisk = cur, now, true
+	if bestUtil > 100 {
+		bestUtil = 100
+	}
+	return best, bestUtil
+}
+
+// isPartition reports whether name is a partition of another device present in the
+// set (e.g. "sda1" when "sda" exists, "nvme0n1p1" when "nvme0n1" exists).
+func isPartition(name string, all map[string]uint64) bool {
+	for parent := range all {
+		if parent != name && len(parent) < len(name) && name[:len(parent)] == parent {
+			// next char must begin a partition suffix (digit, or "p"+digit)
+			c := name[len(parent)]
+			if c >= '0' && c <= '9' {
+				return true
+			}
+			if c == 'p' && len(name) > len(parent)+1 {
+				n := name[len(parent)+1]
+				if n >= '0' && n <= '9' {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// skipDisk drops virtual/noise devices that are never the real culprit.
+func skipDisk(name string) bool {
+	for _, p := range []string{"loop", "ram", "sr", "fd", "dm-", "md"} {
+		if len(name) >= len(p) && name[:len(p)] == p {
+			return true
+		}
+	}
+	return false
 }
 
 // readNet fills the network signals. Rates use the delta since the previous tick.

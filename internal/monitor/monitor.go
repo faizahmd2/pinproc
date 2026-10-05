@@ -60,7 +60,7 @@ func DefaultConfig() Config {
 	return Config{
 		CPU:          DimThreshold{ArmUtil: 80, ArmPSI: 20, CapUtil: 90, CapPSI: 40, Sustain: 60 * time.Second},
 		Mem:          DimThreshold{ArmUtil: 85, ArmPSI: 10, CapUtil: 95, CapPSI: 30, Sustain: 60 * time.Second},
-		IO:           DimThreshold{ArmUtil: 0, ArmPSI: 30, CapUtil: 0, CapPSI: 60, Sustain: 30 * time.Second},
+		IO:           DimThreshold{ArmUtil: 80, ArmPSI: 30, CapUtil: 95, CapPSI: 60, Sustain: 30 * time.Second},
 		Net:          NetThreshold{RetransArm: 50, RetransCap: 200, ConntrackArm: 80, ConntrackCap: 95, TimeWaitArm: 20000, TimeWaitCap: 40000, OrphanArm: 1000, OrphanCap: 2000, Sustain: 30 * time.Second},
 		CalmCadence:  10 * time.Second,
 		ArmedCadence: 2 * time.Second,
@@ -374,7 +374,7 @@ func dimValues(l pressure.Levels, dim contract.Dimension) (lvl, psi float64) {
 	case contract.DimensionMemory:
 		return l.MemUsedPct, l.MemStallPct
 	case contract.DimensionIO:
-		return 0, l.IOStallPct
+		return l.IOUtilPct, l.IOStallPct
 	case contract.DimensionNetwork:
 		return l.ConntrackPct, l.TCPRetransPerSec
 	default:

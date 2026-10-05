@@ -97,18 +97,18 @@ func (e *Engine) Run(ctx context.Context, req Request) (*contract.Investigation,
 		return nil, err
 	}
 	inv := &contract.Investigation{
-		SchemaVersion: contract.SchemaVersion,
-		ID:            req.ID,
-		Host:          req.Host,
-		Trigger:       req.Trigger,
-		Hint:          req.Hint,
-		StartedAt:     start,
+		SchemaVersion:     contract.SchemaVersion,
+		ID:                req.ID,
+		Host:              req.Host,
+		Trigger:           req.Trigger,
+		Hint:              req.Hint,
+		StartedAt:         start,
 		IncidentCheckedAt: start,
-		Budget:        e.opt.Budget,
-		Facts:         facts,
-		Evidence:      []contract.Evidence{},
-		Hypotheses:    []contract.Hypothesis{},
-		Path:          []contract.Step{},
+		Budget:            e.opt.Budget,
+		Facts:             facts,
+		Evidence:          []contract.Evidence{},
+		Hypotheses:        []contract.Hypothesis{},
+		Path:              []contract.Step{},
 	}
 	if inv.ID == "" {
 		inv.ID = fmt.Sprintf("inv-%d", start.UnixNano())
@@ -989,12 +989,22 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 		}
 	}
 
+	// Pick the busiest real device. Skip virtual/noise devices; when nothing is
+	// busy, tie-break deterministically (by throughput, then name) so the report
+	// does not show an arbitrary idle device.
 	bestDevice := ""
 	bestUtil := -1.0
+	bestBytes := -1.0
 	for device, util := range diskUtil {
-		if util > bestUtil {
-			bestUtil = util
-			bestDevice = device
+		if isNoiseDevice(device) {
+			continue
+		}
+		bytes := diskRead[device] + diskWrite[device]
+		better := util > bestUtil ||
+			(util == bestUtil && bytes > bestBytes) ||
+			(util == bestUtil && bytes == bestBytes && (bestDevice == "" || device < bestDevice))
+		if better {
+			bestUtil, bestBytes, bestDevice = util, bytes, device
 		}
 	}
 	if bestDevice != "" {
@@ -1018,4 +1028,15 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 		}
 	}
 	return s
+}
+
+// isNoiseDevice reports whether a block device is virtual/noise and should not be
+// shown as the machine's primary disk.
+func isNoiseDevice(name string) bool {
+	for _, p := range []string{"loop", "ram", "sr", "fd", "dm-", "md"} {
+		if len(name) >= len(p) && name[:len(p)] == p {
+			return true
+		}
+	}
+	return false
 }

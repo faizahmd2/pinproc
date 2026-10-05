@@ -42,7 +42,7 @@ func EvalAll(rs []Rule, ev []contract.Evidence) []Signal {
 
 // Default returns the V2 deterministic rule set.
 func Default() []Rule {
-	return []Rule{cpuSaturated{}, cpuPSI{}, cpuIOWait{}, cpuSteal{}, memPressure{}, memSwap{}, memOOM{}, ioSaturated{}, ioBlocked{}, fdExhausted{}, threadCapacity{}, netRetransmit{}, netListenOverflow{}, cgroupThrottled{}, fsNearlyFull{}, deletedOpenLarge{}}
+	return []Rule{cpuSaturated{}, cpuPSI{}, cpuIOWait{}, cpuSteal{}, memPressure{}, memSwap{}, memOOM{}, ioSaturated{}, ioBlocked{}, fdExhausted{}, threadCapacity{}, netRetransmit{}, netListenOverflow{}, conntrackNearFull{}, ephemeralPortsExhausted{}, cgroupThrottled{}, fsNearlyFull{}, deletedOpenLarge{}}
 }
 
 type cpuSaturated struct{}
@@ -179,6 +179,28 @@ func (fdExhausted) Eval(ev []contract.Evidence) (Signal, bool) {
 		return Signal{}, false
 	}
 	return Signal{"limits.fd_exhaustion", contract.DimensionLimits, 3, fmt.Sprintf("file descriptor usage is %.1f%%", o.Value), support(ev, "limits.fd_used_pct"), true}, true
+}
+
+type conntrackNearFull struct{}
+
+func (conntrackNearFull) ID() string { return "limits.conntrack_near_full" }
+func (conntrackNearFull) Eval(ev []contract.Evidence) (Signal, bool) {
+	o, ok := find(ev, "limits.conntrack_used_pct")
+	if !ok || o.Value <= 80 {
+		return Signal{}, false
+	}
+	return Signal{"limits.conntrack_near_full", contract.DimensionNetwork, 4, fmt.Sprintf("conntrack table is %.1f%% full — new connections will be dropped", o.Value), support(ev, "limits.conntrack_used_pct"), true}, true
+}
+
+type ephemeralPortsExhausted struct{}
+
+func (ephemeralPortsExhausted) ID() string { return "limits.ephemeral_ports" }
+func (ephemeralPortsExhausted) Eval(ev []contract.Evidence) (Signal, bool) {
+	o, ok := find(ev, "limits.ephemeral_used_pct")
+	if !ok || o.Value <= 80 {
+		return Signal{}, false
+	}
+	return Signal{"limits.ephemeral_ports", contract.DimensionNetwork, 3, fmt.Sprintf("ephemeral ports are %.1f%% used — outbound connections may fail to bind", o.Value), support(ev, "limits.ephemeral_used_pct"), true}, true
 }
 
 type threadCapacity struct{}

@@ -122,3 +122,53 @@ func TestNetParsers(t *testing.T) {
 		t.Fatalf("sockstat inuse=%d orphan=%d tw=%d", in, orph, tw)
 	}
 }
+
+func TestIOUtil(t *testing.T) {
+	root := t.TempDir()
+	disk := filepath.Join(root, "diskstats")
+	// fields: major minor name ... io_ticks(field13,index12)
+	mk := func(sdaTicks, sda1Ticks, vdaTicks int) string {
+		line := func(name string, ticks int) string {
+			f := make([]string, 14)
+			for i := range f {
+				f[i] = "0"
+			}
+			f[2] = name
+			f[12] = itoaT(ticks)
+			s := ""
+			for i, v := range f {
+				if i > 0 {
+					s += " "
+				}
+				s += v
+			}
+			return s + "\n"
+		}
+		return line("sda", sdaTicks) + line("sda1", sda1Ticks) + line("vda", vdaTicks)
+	}
+	os.WriteFile(disk, []byte(mk(1000, 900, 0)), 0644)
+	r := NewReader(root, 2)
+	r.ioUtil() // baseline
+	// 500ms later, sda busy +400ms -> 80% util; vda idle
+	os.WriteFile(disk, []byte(mk(1400, 1300, 0)), 0644)
+	r.lastDiskAt = r.lastDiskAt.Add(-500 * 1e6) // pretend 500ms elapsed
+	dev, util := r.ioUtil()
+	if dev != "sda" {
+		t.Fatalf("busiest device = %q, want sda (not vda/partition)", dev)
+	}
+	if util < 79 || util > 81 {
+		t.Fatalf("util = %v, want ~80", util)
+	}
+}
+
+func itoaT(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	b := []byte{}
+	for v > 0 {
+		b = append([]byte{byte('0' + v%10)}, b...)
+		v /= 10
+	}
+	return string(b)
+}
