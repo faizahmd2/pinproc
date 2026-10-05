@@ -88,3 +88,20 @@ func writeFixtureB(b *testing.B) string {
 	}
 	return root
 }
+
+func TestCPUUtilDelta(t *testing.T) {
+	root := t.TempDir()
+	stat := filepath.Join(root, "stat")
+	// first tick establishes baseline
+	os.WriteFile(stat, []byte("cpu  100 0 50 1000 0 0 0 0 0 0\n"), 0644)
+	r := NewReader(root, 2)
+	if u := r.Calm().CPUUtilPct; u != 0 {
+		t.Fatalf("first tick util should be 0, got %v", u)
+	}
+	// second tick: busy += 150 (100 user... actually busy delta), idle += 50
+	// new: user 200 system 100 idle 1050 => total delta = (200+100+1050)-(100+50+1000)=200; busy delta=(300-150)=150 -> 75%
+	os.WriteFile(stat, []byte("cpu  200 0 100 1050 0 0 0 0 0 0\n"), 0644)
+	if u := r.Calm().CPUUtilPct; u < 74.9 || u > 75.1 {
+		t.Fatalf("util = %v, want ~75", u)
+	}
+}

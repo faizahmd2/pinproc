@@ -16,6 +16,7 @@ type Levels struct {
 	CPUStallPct  float64 // /proc/pressure/cpu    some avg10
 	MemStallPct  float64 // /proc/pressure/memory some avg10
 	IOStallPct   float64 // /proc/pressure/io     some avg10
+	CPUUtilPct   float64 // from /proc/stat delta between ticks (0 on first tick)
 	MemUsedPct   float64 // from MemTotal/MemAvailable
 	SwapUsedPct  float64 // from SwapTotal/SwapFree
 	Load1PerCore float64 // loadavg[0] / cores
@@ -29,6 +30,7 @@ var (
 	kMemAvl  = []byte("MemAvailable:")
 	kSwapTot = []byte("SwapTotal:")
 	kSwapFre = []byte("SwapFree:")
+	kCPU     = []byte("cpu ")
 )
 
 // Reader reads aggregate pressure cheaply. It is not safe for concurrent use; a
@@ -41,6 +43,10 @@ type Reader struct {
 	pIO     string
 	pMemnfo string
 	pLoad   string
+	pStat   string
+	// previous /proc/stat aggregate counters for utilization delta
+	prevBusy, prevTotal uint64
+	havePrev            bool
 }
 
 // NewReader returns a Reader. procRoot defaults to /proc; cores is used to
@@ -61,6 +67,7 @@ func NewReader(procRoot string, cores int) *Reader {
 		pIO:     procRoot + "/pressure/io",
 		pMemnfo: procRoot + "/meminfo",
 		pLoad:   procRoot + "/loadavg",
+		pStat:   procRoot + "/stat",
 	}
 }
 
@@ -74,7 +81,64 @@ func (r *Reader) Calm() Levels {
 	l.IOStallPct = r.psiSome(r.pIO)
 	r.readMeminfo(&l)
 	l.Load1PerCore = r.load1() / float64(r.cores)
+	l.CPUUtilPct = r.cpuUtil()
 	return l
+}
+
+// cpuUtil computes CPU utilization since the previous Calm tick from the /proc/stat
+// aggregate line. Returns 0 on the first tick (no baseline yet).
+func (r *Reader) cpuUtil() float64 {
+	data := r.read(r.pStat)
+	if data == nil {
+		return 0
+	}
+	line := data
+	if nl := bytes.IndexByte(data, '\n'); nl >= 0 {
+		line = data[:nl]
+	}
+	if !bytes.HasPrefix(line, kCPU) {
+		return 0
+	}
+	// Fields after "cpu ": user nice system idle iowait irq softirq steal ...
+	fields := line[len(kCPU):]
+	var vals [10]uint64
+	n := 0
+	i := 0
+	for n < len(vals) && i < len(fields) {
+		for i < len(fields) && fields[i] == ' ' {
+			i++
+		}
+		start := i
+		var v uint64
+		for i < len(fields) && fields[i] >= '0' && fields[i] <= '9' {
+			v = v*10 + uint64(fields[i]-'0')
+			i++
+		}
+		if i == start {
+			break
+		}
+		vals[n] = v
+		n++
+	}
+	if n < 5 {
+		return 0
+	}
+	var total uint64
+	for j := 0; j < n; j++ {
+		total += vals[j]
+	}
+	idle := vals[3] + vals[4] // idle + iowait
+	busy := total - idle
+	defer func() { r.prevBusy, r.prevTotal, r.havePrev = busy, total, true }()
+	if !r.havePrev || total <= r.prevTotal {
+		return 0
+	}
+	dt := total - r.prevTotal
+	db := busy - r.prevBusy
+	if dt == 0 {
+		return 0
+	}
+	return float64(db) / float64(dt) * 100
 }
 
 // read reads a small file into the reused buffer using raw syscalls, so a calm

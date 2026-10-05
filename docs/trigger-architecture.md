@@ -38,38 +38,25 @@ We arm on whichever crosses first and confirm with the fuller picture. A pure-PS
 trigger would miss an 80% CPU box with no run-queue; a pure-utilization trigger
 would cry wolf on healthy busy work.
 
-## Key finding (VM-verified) — push vs pull, the decision that shapes everything
+## Decision: read-only pull (push was evaluated and rejected)
 
-Proven on Ubuntu 24.04 / kernel 6.8 (arm64):
+We "let the kernel tell us" by **reading** the kernel's pressure/utilization
+numbers on a cheap adaptive timer — not by arming kernel push triggers. Why:
 
-- `/proc/pressure/*` **triggers are rejected with EINVAL even for root** on this
-  kernel. System-wide `/proc` PSI triggers are effectively off on modern Ubuntu.
-- **cgroup v2 `*.pressure` triggers work.** Arming the root cgroup's
-  `/sys/fs/cgroup/{cpu,memory,io}.pressure` = whole-machine; a leaf = per-service.
-- A CPU trigger **fired ~2 s after pressure began, with the process blocked at 0%
-  CPU and no socket open** — the push model is real and cheap.
-- **But arming a trigger is a *write* to a root-owned cgroupfs file.** It needs
-  root or `CAP_DAC_OVERRIDE`, and `/sys/fs/cgroup` must be writable to the service
-  (i.e. `ProtectControlGroups` relaxed). pinproc today is read-only with only
-  `CAP_DAC_READ_SEARCH` and cannot write it.
+- PSI *push* triggers (`poll()` on a pressure file) were tested on the VM and work
+  on cgroup v2 `*.pressure` files, but **arming one is a write to a root-owned
+  cgroupfs file** (needs root / `CAP_DAC_OVERRIDE`, with `ProtectControlGroups`
+  relaxed). A read-only third-party package must not take write authority over
+  cgroupfs — it breaks pinproc's entire reason for being.
+- `/proc/pressure/*` push triggers are additionally **rejected with EINVAL even
+  for root** on modern Ubuntu (6.8), so push isn't even portable.
 
-So there are two ways to "let the kernel tell us," and this is the fork:
-
-| | **Push (PSI triggers)** | **Pull (read-only sampler)** |
-|---|---|---|
-| mechanism | arm cgroup trigger, epoll, kernel wakes us | timerfd wakes us every 2–5 s to read PSI/util |
-| idle cost | ~0 wakeups | tiny (a few file reads every few seconds) |
-| reaction | sub-second | 2–5 s |
-| privilege | **needs cgroupfs write** (root / CAP_DAC_OVERRIDE, ProtectControlGroups off) | **pure read** — fits current minimal, read-only posture |
-| portability | cgroup v2 only; /proc triggers off on modern Ubuntu; varies by distro | works everywhere PSI/util files are readable (v1/v2, containers, old kernels) |
-
-Both read the *same* kernel pressure numbers; push is notified, pull polls cheaply.
-For incidents that build over seconds/minutes, a 2–5 s pull reaction is plenty.
-
-**Recommendation:** make **pull the default** (preserves pinproc's zero-write,
-minimal-privilege, maximally-portable identity), and offer **push as an optional
-low-latency mode** only where the operator accepts the cgroupfs-write privilege.
-Either way: no socket, zero egress, same two-stage dots + report below.
+Pull reads the *same* kernel numbers and stays **pure read** (only
+`CAP_DAC_READ_SEARCH`), works everywhere (cgroup v1/v2, containers, old kernels),
+and — measured on the VM — costs **~7µs per calm tick (~63 ms CPU/day at 10 s
+cadence)**, far less than a cron that forks a process each tick. For incidents that
+build over seconds/minutes, a 2–5 s reaction is plenty. The PSI push code has been
+removed from the tree.
 
 ## Two-stage trigger (arm → confirm → act)
 
@@ -107,28 +94,27 @@ the report **timeline** (how it built up + who was climbing) plus one deep
 snapshot of the culprit. Cadence is adaptive: slow (~10s) while low, fast (~2–3s)
 once armed.
 
-## Kernel mechanisms
+## Signals we read (pull)
 
-| mechanism | covers | notes |
-|-----------|--------|-------|
-| **PSI triggers** (`/proc/pressure/*`, write `some <stall_us> <window_us>`, poll POLLPRI) | cpu, mem, io | kernel ≥5.2 + CONFIG_PSI; 0% idle |
-| **per-cgroup PSI** (`/sys/fs/cgroup/<unit>/*.pressure`) | which *service* | cgroup v2; attribution for free |
-| **cgroup v2 `memory.events`** (poll) | OOM-kill, per service | instant, fixes 1s-delta OOM miss |
-| **epoll + timerfd + signalfd** | the event loop | one sleeping thread |
-| **pidfd** (`pidfd_open`, ≥5.3) | correctness | no PID-reuse mis-blame when we react |
-| **/proc/net/dev + snmp sample** (timerfd) | network | no PSI for net; link speed often `-1` on VMs |
-| **statfs (timer) / fanotify FAN_FS_ERROR** | disk space / ro-remount | space is slow; ro-remount newer kernels |
-| ~~eBPF~~ | (per-proc net bytes, runq latency) | **out of core** — root/CAP_BPF, surface; maybe optional later |
+| signal | source | covers |
+|--------|--------|--------|
+| PSI `some avg10` | `/proc/pressure/{cpu,memory,io}` (read) | cpu, mem, io pressure |
+| CPU utilization | `/proc/stat` delta between ticks | cpu |
+| mem/swap used % | `/proc/meminfo` | memory |
+| load 1/5/15 | `/proc/loadavg` | cpu trend |
+| per-process contenders | `/proc/[pid]/{stat,statm,io}` — **only when armed** | who owns the dimension |
 
-## Portability & fallback (because "all Linux")
+Read-only throughout (`CAP_DAC_READ_SEARCH`). Deliberately **not** used: kernel
+push triggers (write), eBPF (root/CAP_BPF). Network has no PSI → when armed we also
+sample `/proc/net/dev`/`snmp`; link capacity is often unknowable on VMs, so we show
+rate + retransmits rather than a fake percentage.
 
-Detect capabilities at startup:
-- PSI triggers present → use them.
-- else (old kernel / no CONFIG_PSI) → **timerfd utilization sampler** at a modest
-  cadence. Same reports, slightly less instant.
-- cgroup v2 → per-cgroup PSI + `memory.events`; cgroup v1 → fall back to host PSI
-  / `vmpressure`.
-`pinproc doctor` prints which trigger mode is active.
+## Portability (because "all Linux")
+
+The pull sampler reads whatever is present and degrades per field: PSI missing →
+fall back to utilization/load; meminfo/loadavg always present. cgroup v1/v2,
+containers and old kernels all work because we only read. `pinproc doctor` reports
+which signals are available on the host.
 
 ## Edge cases we must handle (not discover)
 
@@ -154,13 +140,22 @@ stays rare and purposeful.
 ## Build order
 
 1. `docs/trigger-architecture.md` (this file).
-2. `internal/psi` — arm/wait/close a real PSI trigger (stdlib syscall epoll, no new
-   deps) + availability detection. Proven on the VM: kernel wakes us, no socket.
-3. dots ring buffer (`internal/dots`).
-4. state machine (arm → watch → capture/discard).
-5. wire CAPTURE to the existing engine; timeline in the report.
-6. delivery (local + optional push).
-7. `doctor` reports trigger mode; packaging drops the listener.
+2. `internal/pressure` — read-only calm-path aggregate reader (done, measured).
+3. `internal/dots` — in-memory ring of incident samples; effective discard.
+4. `internal/contenders` — light per-dimension top-N process sampler (armed only).
+5. `internal/monitor` — the state machine (arm → watch → capture/discard) with
+   adaptive cadence and cooldown; configurable thresholds.
+6. wire CAPTURE to the existing engine; fold the dots in as the report timeline.
+7. `service run` runs the monitor (no socket); `pinproc report` runs in-process;
+   `doctor` reports available signals.
+
+## Default thresholds (configurable)
+
+| dim | arm (T1) | capture (T2) | sustain | calm | armed | cooldown |
+|-----|----------|--------------|---------|------|-------|----------|
+| cpu | util 80% or PSI>20 | 90% or PSI>40 | ≥60s | 10s | 2s | 2m |
+| mem | used 85% or PSI>10 | 95% or PSI>30 | ≥60s | 10s | 2s | 2m |
+| io  | PSI>30 | PSI>60 | ≥30s | 10s | 2s | 2m |
 
 Each step tiny, tested, VM-verified. The report must read as app-level cause +
 remediation, understandable by the owner of the affected service.
