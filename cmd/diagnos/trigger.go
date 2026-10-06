@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -16,11 +17,11 @@ import (
 	"github.com/faizahmd2/pinproc/internal/config"
 	"github.com/faizahmd2/pinproc/internal/contenders"
 	"github.com/faizahmd2/pinproc/internal/contract"
+	drules "github.com/faizahmd2/pinproc/internal/decision/rules"
 	"github.com/faizahmd2/pinproc/internal/dots"
 	"github.com/faizahmd2/pinproc/internal/engine"
 	"github.com/faizahmd2/pinproc/internal/identity"
 	"github.com/faizahmd2/pinproc/internal/monitor"
-	"github.com/faizahmd2/pinproc/internal/narrator"
 	"github.com/faizahmd2/pinproc/internal/netmap"
 	"github.com/faizahmd2/pinproc/internal/pressure"
 	"github.com/faizahmd2/pinproc/internal/report"
@@ -51,15 +52,10 @@ func (s *captureSink) Capture(ctx context.Context, c monitor.Capture) {
 		logger.Error("capture: capability graph unavailable", "error", err)
 		return
 	}
-	dec, err := makeDecisionProvider(s.cfg)
-	if err != nil {
-		logger.Error("capture: decision provider unavailable", "error", err)
-		return
-	}
 	eng := engine.New(engine.Options{
-		Source: src, Registry: reg, Rules: rules.Default(), Decision: dec,
+		Source: src, Registry: reg, Rules: rules.Default(), Decision: drules.New(),
 		Identity: identity.New(src), Budget: contract.BudgetNormal(), ParallelWidth: 3,
-		MaxFindings: s.cfg.Report.MaxFindings, DecisionNotice: decisionNotice(s.cfg), Logger: logger,
+		MaxFindings: s.cfg.Report.MaxFindings, Logger: logger,
 	})
 	inv, err := eng.Run(ctx, engine.Request{
 		ID:        fmt.Sprintf("inc-%d", c.FiredAt.UnixNano()),
@@ -73,21 +69,17 @@ func (s *captureSink) Capture(ctx context.Context, c monitor.Capture) {
 	}
 	inv.Incident = toIncident(c)
 	inv.Incident.Cause = buildCause(ctx, src, inv, c.Dimension)
-	if s.cfg.Narrator.Enabled {
-		if text, ne := narrator.NewRules().Narrate(ctx, inv); ne == nil && narrator.Validate(inv, text) == nil {
-			inv.Narrative = text
-		}
-	}
-	if err := report.Write(inv, s.reportDir); err != nil {
+
+	text := report.RenderMarkdown(inv)
+	if err := report.WriteText(s.reportDir, text); err != nil {
 		logger.Error("capture: report write failed", "error", err)
 		return
 	}
 	logger.Info("incident captured", "dimension", c.Dimension, "reason", c.Reason, "dots", len(c.Dots))
 
 	if s.cfg.Callback.Enabled && strings.TrimSpace(s.cfg.Callback.URL) != "" {
-		payload := *inv
 		go func() {
-			if err := callback.Post(context.Background(), s.cfg.Callback.URL, s.cfg.Callback.Timeout, &payload); err != nil {
+			if err := callback.Post(context.Background(), s.cfg.Callback.URL, s.cfg.Callback.Timeout, text); err != nil {
 				logger.Warn("report callback failed", "error", err)
 			}
 		}()
@@ -285,4 +277,12 @@ func runMonitor(ctx context.Context, cfg *config.Config, reportDir string, mu *s
 	m := monitor.New(cfg.Monitor, pressure.NewReader("/proc", cores), contenders.NewSampler("/proc"), sink)
 	logger.Info("pinproc self-trigger active", "mode", "pull", "calm", cfg.Monitor.CalmCadence, "armed", cfg.Monitor.ArmedCadence)
 	return m.Run(ctx)
+}
+
+// localHostName returns the host's name for the report header.
+func localHostName() string {
+	if h, err := os.Hostname(); err == nil && strings.TrimSpace(h) != "" {
+		return strings.TrimSpace(h)
+	}
+	return "localhost"
 }

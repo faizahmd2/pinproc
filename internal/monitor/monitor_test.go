@@ -73,8 +73,8 @@ func TestDiscardOnRecovery(t *testing.T) {
 func TestCooldownSuppressesReArm(t *testing.T) {
 	m := newTestMonitor()
 	t0 := time.Unix(0, 0)
-	m.decide(t0, cpuLevels(82, 0))                      // arm
-	m.decide(t0.Add(time.Second), cpuLevels(95, 0))     // capture (sets lastCapture)
+	m.decide(t0, cpuLevels(82, 0))                  // arm
+	m.decide(t0.Add(time.Second), cpuLevels(95, 0)) // capture (sets lastCapture)
 	// immediately high again, but within cooldown -> no arm
 	if act, _, _ := m.decide(t0.Add(2*time.Second), cpuLevels(95, 0)); act != actCalm {
 		t.Fatalf("expected calm during cooldown, got %v", act)

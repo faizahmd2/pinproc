@@ -1,93 +1,87 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
+	"os"
 	"time"
 
+	"github.com/faizahmd2/pinproc/internal/capability"
 	"github.com/faizahmd2/pinproc/internal/config"
+	"github.com/faizahmd2/pinproc/internal/contract"
+	drules "github.com/faizahmd2/pinproc/internal/decision/rules"
+	"github.com/faizahmd2/pinproc/internal/engine"
+	"github.com/faizahmd2/pinproc/internal/identity"
+	"github.com/faizahmd2/pinproc/internal/report"
+	"github.com/faizahmd2/pinproc/internal/rules"
+	"github.com/faizahmd2/pinproc/internal/source"
 	"github.com/spf13/cobra"
 )
 
-// newReportCmd is the one command an operator runs on the box: trigger an
-// investigation on the local service and print the report. --last shows the
-// previous report without running a new one.
+// newReportCmd prints a report. By default it runs a fresh investigation in-process
+// (no daemon, no socket) and prints it; --last prints the daemon's last capture.
 func newReportCmd() *cobra.Command {
-	var last, asJSON bool
+	var last bool
 	var hint, dimension string
-	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "report",
-		Short: "run an investigation on the local service and print the report",
+		Short: "print an investigation report (fresh by default, or the last capture)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			listen, key := clientTarget()
-			if timeout <= 0 {
-				timeout = 35 * time.Second
-			}
-
-			path := "/investigate"
 			if last {
-				path = "/report"
+				text, err := report.ReadText(config.DataDirectory)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return fmt.Errorf("no captured report yet at %s", config.DataDirectory)
+					}
+					return err
+				}
+				fmt.Fprint(cmd.OutOrStdout(), text)
+				return nil
 			}
-			q := url.Values{}
-			if asJSON {
-				q.Set("json", "true")
-			}
-			if hint != "" {
-				q.Set("hint", hint)
-			}
-			if dimension != "" {
-				q.Set("dimension", dimension)
-			}
-			endpoint := "http://" + listen + path
-			if len(q) > 0 {
-				endpoint += "?" + q.Encode()
-			}
-
-			req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+			text, err := investigateNow(hint, dimension)
 			if err != nil {
 				return err
 			}
-			if key != "" {
-				req.Header.Set("Authorization", "Bearer "+key)
-			}
-			resp, err := (&http.Client{Timeout: timeout}).Do(req)
-			if err != nil {
-				return fmt.Errorf("could not reach pinproc service on %s — is pinproc.service running? (%w)", listen, err)
-			}
-			defer resp.Body.Close()
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-			if resp.StatusCode == http.StatusUnauthorized {
-				return fmt.Errorf("pinproc service requires an API key; re-run with sudo so the configured key can be used")
-			}
-			fmt.Fprint(cmd.OutOrStdout(), string(body))
-			if !strings.HasSuffix(string(body), "\n") {
-				fmt.Fprintln(cmd.OutOrStdout())
-			}
+			fmt.Fprint(cmd.OutOrStdout(), text)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&last, "last", false, "show the last report without running a new investigation")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON instead of markdown")
-	cmd.Flags().StringVar(&hint, "hint", "", "operator context, e.g. \"memory alert\"")
-	cmd.Flags().StringVar(&dimension, "dimension", "", "focus: cpu|memory|io|network|scheduling|filesystem|limits")
-	cmd.Flags().DurationVar(&timeout, "timeout", 0, "client timeout (default 35s)")
+	cmd.Flags().BoolVar(&last, "last", false, "print the daemon's last captured report instead of running now")
+	cmd.Flags().StringVar(&hint, "hint", "", "operator context, e.g. \"checkout latency\"")
+	cmd.Flags().StringVar(&dimension, "dimension", "", "focus: cpu|memory|io|network|filesystem|limits")
 	return cmd
 }
 
-// clientTarget resolves the service address and API key from the managed config,
-// falling back to the documented default when the config cannot be read.
-func clientTarget() (listen, key string) {
-	listen = "127.0.0.1:8080"
+// investigateNow runs a one-shot investigation in-process and returns the rendered
+// report text. It is fully local — no socket, no egress.
+func investigateNow(hint, dimension string) (string, error) {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		return listen, ""
+		return "", err
 	}
-	if cfg.Server.Listen != "" {
-		listen = cfg.Server.Listen
+	src := source.NewLocalWithTimeout("/proc", "/sys", 8<<20, cfg.Source.ReadTimeout)
+	defer src.Close()
+	if err := src.StartupCheck(); err != nil {
+		return "", err
 	}
-	return listen, cfg.Server.APIKey
+	reg, err := capability.BuildBuiltin()
+	if err != nil {
+		return "", err
+	}
+	eng := engine.New(engine.Options{
+		Source: src, Registry: reg, Rules: rules.Default(), Decision: drules.New(),
+		Identity: identity.New(src), Budget: contract.BudgetNormal(), ParallelWidth: 3,
+		MaxFindings: cfg.Report.MaxFindings, Logger: logger,
+	})
+	inv, err := eng.Run(context.Background(), engine.Request{
+		ID:        fmt.Sprintf("manual-%d", time.Now().UnixNano()),
+		Host:      localHostName(),
+		Trigger:   "manual",
+		Hint:      hint,
+		Dimension: contract.Dimension(dimension),
+	})
+	if err != nil {
+		return "", err
+	}
+	return report.RenderMarkdown(inv), nil
 }

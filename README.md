@@ -5,9 +5,9 @@
   Measure the host, follow the evidence, and produce a developer-readable explanation.
 </p>
 
-pinproc treats the Linux host as the system boundary. CPU, memory, disk, network, sockets, processes, threads, file descriptors, and cgroups are measured first. The investigation then follows the evidence toward the resource or process that best explains the pressure.
+pinproc treats the Linux host as the system boundary. It watches CPU, memory, disk I/O and network by reading kernel pressure/utilization on a cheap adaptive timer, and when a resource crosses a threshold it captures the incident and attributes it to the **service** responsible — with the component processes, a build-up timeline, and an application-level next step.
 
-Collection is native and read-only. pinproc does not require a cloud-provider API or a mandatory central service.
+Collection is native and read-only. There is **no socket, no API and no agent to call**: pinproc triggers itself. By default nothing leaves the machine; the only optional egress is a single plain-text report POSTed to a URL you configure.
 
 ## Install
 
@@ -41,96 +41,42 @@ Check the service:
 systemctl status pinproc --no-pager
 ```
 
-## AI Provider
+## Usage
 
-AI is optional. Without a configured provider, pinproc continues with deterministic rules.
-
-Currently supported provider:
-
-```bash
-sudo apt install pinproc-provider-jev
-```
-
-Configure it:
+pinproc runs as a systemd service that watches the host and captures incidents on
+its own. To read reports:
 
 ```bash
-sudo pinproc setup ai --provider jev
+pinproc report          # run an investigation now and print it
+pinproc report --last   # print the service's last captured incident
+sudo pinproc doctor     # read-only self-check — if green, captures won't fail
 ```
 
-The setup command prompts for the API key.
-
-Manage providers:
-
-```bash
-pinproc ai list
-pinproc ai status
-sudo pinproc ai remove
-```
-
-## API
-
-By default, pinproc listens on `127.0.0.1:8080`.
-
-| Endpoint       | Purpose                                 |
-| -------------- | --------------------------------------- |
-| `/health`      | Service health                          |
-| `/investigate` | Start an investigation and get a report |
-| `/report`      | Read the current / last report          |
-
-You can also guide an investigation with a hint or dimension:
-
-```text
-http://127.0.0.1:8080/investigate?hint=memory%2090
-```
-
-```text
-http://127.0.0.1:8080/investigate?dimension=cpu
-```
+Reports read top-down: a one-line verdict, the **Cause** (service + components +
+action), how the incident **built up**, and the current machine context.
 
 ## Configuration
 
-Show the managed configuration:
-
 ```bash
-sudo pinproc config show
-sudo pinproc config show --json
+sudo pinproc config show        # show the managed config
+sudo pinproc config validate    # validate it
 ```
 
-Validate configuration:
+Send each captured report (as plain text) to one URL — the only traffic pinproc
+ever sends:
 
 ```bash
-sudo pinproc config validate
-```
-
-Configure a report callback:
-
-~~~bash
 sudo pinproc setup callback --url https://example.com/pinproc
-~~~
-
-Disable the report callback:
-
-~~~bash
 sudo pinproc setup callback --disable
-~~~
+```
 
-Configure the API listening port:
+Tune when an incident is captured by editing the optional `monitor:` section of
+`/etc/pinproc/config.yaml` (see `docs/testing.md`), then restart the service.
 
-~~~bash
-sudo pinproc setup server --listen 127.0.0.1:8080
-~~~
+## Testing
 
-Configure or update the API key to call pinproc:
-
-~~~bash
-sudo pinproc setup server
-~~~
-
-Clear the remote API key:
-
-~~~bash
-sudo pinproc setup server --clear-api-key
-~~~
+See [docs/testing.md](docs/testing.md) for commands to exercise every resource
+(CPU, memory, disk I/O, disk space, network) on a real VM.
 
 ## Remove
 
@@ -158,16 +104,10 @@ go test ./...
 go vet ./...
 ```
 
-Build the core:
+Build:
 
 ```bash
 make build
-```
-
-Build the JEV provider:
-
-```bash
-make build-provider
 ```
 
 The Linux collection layer reads `/proc`, `/sys`, cgroups, and kernel state directly and is therefore Linux-specific.
@@ -176,4 +116,4 @@ The Linux collection layer reads `/proc`, `/sys`, cgroups, and kernel state dire
 
 * [Pinproc](https://github.com/faizahmd2/pinproc)
 * [APT repository](https://faizahmd2.github.io/pinproc-apt/)
-* [Provider protocol](docs/provider-protocol.md)
+* [Architecture](docs/trigger-architecture.md)

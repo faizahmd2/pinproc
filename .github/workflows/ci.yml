@@ -26,51 +26,38 @@ jobs:
       - name: Build
         run: make build
 
-      - name: Verify core has no vendor provider dependency
+      - name: Verify read-only posture (no HTTP server / transport in the binary)
         run: |
-          ! go list -deps ./cmd/diagnos | grep -q "/internal/decision/jev"
-          ! strings pinproc | grep -q "api.typesafe.ai"
-          ! strings pinproc | grep -q "/v1/systemone"
-
-      - name: Build provider
-        run: make build-provider
+          ! go list -deps ./cmd/diagnos | grep -q "net/http/.*server"
+          ! strings pinproc | grep -q "ListenAndServe"
 
       - name: Build release artifacts
         run: make release VERSION=0.0.0
 
-      - name: Build Debian packages
+      - name: Build Debian package
         run: |
           make package-deb GOARCH=amd64 VERSION=0.0.0
-          make package-provider-jev GOARCH=amd64 VERSION=0.0.0
           ls -lh dist/*.deb
 
       - name: Smoke install and purge
         run: |
           set -x
           CORE=./dist/pinproc_0.0.0_amd64.deb
-          PROVIDER=./dist/pinproc-provider-jev_0.0.0_amd64.deb
           set +e
-          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y "$CORE" "$PROVIDER"
+          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y "$CORE"
           install_rc=$?
           set -e
           if [ "$install_rc" -ne 0 ]; then
             echo "apt-get returned $install_rc; verify dpkg completed the package installation cleanly"
             sudo dpkg --audit
             test "$(dpkg-query -W -f='\${Status}' pinproc)" = "install ok installed"
-            test "$(dpkg-query -W -f='\${Status}' pinproc-provider-jev)" = "install ok installed"
           fi
           test -x /usr/bin/pinproc
-          test -x /usr/libexec/pinproc/providers/jev
           test -f /usr/lib/systemd/system/pinproc.service
-          test -f /usr/share/pinproc/providers/jev.yaml
           sudo test -f /etc/pinproc/config.yaml
           sudo test -d /var/lib/pinproc
           getent passwd pinproc
           getent group pinproc
-          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get remove -y pinproc-provider-jev
-          test -x /usr/bin/pinproc
-          test ! -e /usr/libexec/pinproc/providers/jev
-          test ! -e /usr/share/pinproc/providers/jev.yaml
           sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get remove -y pinproc
           sudo test -f /etc/pinproc/config.yaml
           test -d /var/lib/pinproc
@@ -80,7 +67,5 @@ jobs:
           test ! -e /usr/lib/systemd/system/pinproc.service
           test ! -e /etc/pinproc
           test ! -e /var/lib/pinproc
-          test ! -e /usr/libexec/pinproc
-          test ! -e /usr/share/pinproc
           ! getent passwd pinproc
           ! getent group pinproc

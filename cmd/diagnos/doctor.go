@@ -2,14 +2,11 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/faizahmd2/pinproc/internal/config"
-	dprovider "github.com/faizahmd2/pinproc/internal/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -105,11 +102,6 @@ func runDoctor() []checkResult {
 		add("managed config parses", statusOK, config.ConfigPath)
 	}
 
-	cfg, cfgErr := config.Load(cfgPath)
-	if cfgErr != nil {
-		cfg = nil
-	}
-
 	// Data directory writable (reports). Only meaningful for the service user.
 	dir := config.DataDirectory
 	if err := tryWritable(dir); err == nil {
@@ -135,26 +127,18 @@ func runDoctor() []checkResult {
 		add("kernel log readable (/dev/kmsg)", statusWarn, "OOM-kill evidence will be unavailable; needs CAP_SYSLOG or root")
 	}
 
-	// AI provider, if configured.
-	if cfg != nil && cfg.AI.Provider != "" {
-		if m, err := dprovider.LoadInstalled(cfg.AI.Provider); err != nil {
-			add("AI provider "+cfg.AI.Provider, statusWarn, "configured but unavailable ("+err.Error()+"); using deterministic rules")
-		} else {
-			add("AI provider "+m.ID, statusOK, m.Executable)
-		}
+	// Trigger mode: pinproc self-triggers by reading pressure (no socket).
+	if _, err := os.Stat("/proc/pressure/cpu"); err == nil {
+		add("trigger mode", statusOK, "pull (PSI + utilization)")
 	} else {
-		add("AI provider", statusOK, "not configured; deterministic rules")
+		add("trigger mode", statusWarn, "PSI unavailable; using utilization/load only")
 	}
 
-	// Service reachability over the configured listen address.
-	listen := "127.0.0.1:8080"
-	if cfg != nil && cfg.Server.Listen != "" {
-		listen = cfg.Server.Listen
-	}
-	if reachHealth(listen) {
-		add("service reachable", statusOK, "http://"+listen+"/health")
+	// Last captured report, if any.
+	if b, err := os.Stat(filepath.Join(config.DataDirectory, "report.md")); err == nil {
+		add("last report", statusOK, "captured "+b.ModTime().Format("02 Jan 15:04"))
 	} else {
-		add("service reachable", statusWarn, "no response on "+listen+" — is pinproc.service running?")
+		add("last report", statusOK, "none yet")
 	}
 
 	return out
@@ -188,14 +172,4 @@ func canReadKmsg() bool {
 	}
 	_ = f.Close()
 	return true
-}
-
-func reachHealth(listen string) bool {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get("http://" + listen + "/health")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
 }

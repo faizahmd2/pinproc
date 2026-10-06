@@ -10,16 +10,16 @@ import (
 
 func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 	inv := &contract.Investigation{
-		Host: "localhost",
+		Host:              "localhost",
 		IncidentCheckedAt: time.Date(2026, 9, 27, 21, 0, 0, 0, time.FixedZone("IST", 19800)),
 		Machine: contract.MachineIdentity{
-			Hostname: "ip-10-0-0-1",
-			PrimaryIP: "10.0.0.1",
-			OS: "Ubuntu 24.04 LTS",
-			Kernel: "6.8.0-test",
+			Hostname:     "ip-10-0-0-1",
+			PrimaryIP:    "10.0.0.1",
+			OS:           "Ubuntu 24.04 LTS",
+			Kernel:       "6.8.0-test",
 			Architecture: "amd64",
-			CPUs: 2,
-			Uptime: 2 * time.Hour,
+			CPUs:         2,
+			Uptime:       2 * time.Hour,
 		},
 		MachineSnapshot: contract.MachineSnapshot{
 			CPUs: 2, CPUUtilizationPct: 15, Load1: 0.2,
@@ -30,8 +30,8 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 			DiskUtilizationPct: 12, DiskAwaitMS: 1.5, NetworkRxBPS: 1 << 20,
 			NetworkTxBPS: 2 << 20, NetworkRetransmitsPerSec: 0.2, TCPInUse: 8, TCPTimeWait: 2,
 		},
-		Duration: time.Second,
-		Spent: contract.Spend{Depth: 1},
+		Duration:   time.Second,
+		Spent:      contract.Spend{Depth: 1},
 		StopReason: contract.StopSufficientEvidence,
 		Hypotheses: []contract.Hypothesis{{Statement: "root filesystem is filling", Grade: contract.GradeObserved, Confidence: 0.9, Entity: contract.Entity{Kind: contract.EntityMachine, ID: "machine"}}},
 	}
@@ -55,11 +55,11 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 
 func TestRenderMarkdownShowsDiagnosticsForCollectionFailure(t *testing.T) {
 	inv := &contract.Investigation{
-		Host: "localhost",
-		Machine: contract.MachineIdentity{Hostname: "test-host"},
+		Host:       "localhost",
+		Machine:    contract.MachineIdentity{Hostname: "test-host"},
 		StopReason: contract.StopSufficientEvidence,
 		Hypotheses: []contract.Hypothesis{{Statement: "test", Entity: contract.Entity{Kind: contract.EntityMachine, ID: "machine"}}},
-		Evidence: []contract.Evidence{{Err: "read failed", Verify: []string{"/proc/stat"}, Entity: contract.Entity{Kind: contract.EntityMachine, ID: "machine"}}},
+		Evidence:   []contract.Evidence{{Err: "read failed", Verify: []string{"/proc/stat"}, Entity: contract.Entity{Kind: contract.EntityMachine, ID: "machine"}}},
 	}
 	got := RenderMarkdown(inv)
 	if !strings.Contains(got, "Verify") {

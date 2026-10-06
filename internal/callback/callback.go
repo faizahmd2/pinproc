@@ -1,39 +1,31 @@
 package callback
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/faizahmd2/pinproc/internal/contract"
 )
 
-// Post sends one bounded report webhook request. Callback delivery is best-effort
-// and is deliberately outside the investigation result path.
-func Post(ctx context.Context, url string, timeout time.Duration, inv *contract.Investigation) error {
+// Post delivers one captured report, as plain text (the rendered report), to a
+// single configured URL. This is the only traffic pinproc ever sends. Delivery is
+// best-effort and bounded.
+func Post(ctx context.Context, url string, timeout time.Duration, report string) error {
 	if strings.TrimSpace(url) == "" {
 		return fmt.Errorf("callback URL is empty")
 	}
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	body, err := json.Marshal(inv)
-	if err != nil {
-		return fmt.Errorf("encode report: %w", err)
-	}
-
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, strings.NewReader(report))
 	if err != nil {
 		return fmt.Errorf("create callback request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	req.Header.Set("User-Agent", "pinproc")
 
 	client := &http.Client{Timeout: timeout}

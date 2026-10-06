@@ -12,5 +12,7 @@ func TestShouldStopEnforcesDecisionBudget(t *testing.T) {
 	b := contract.BudgetNormal()
 	spent := contract.Spend{DecisionCalls: b.MaxDecisionCalls}
 	got := ShouldStop(start, start, spent, b)
-	if got != contract.StopBudgetDecisionCalls { t.Fatalf("got stop reason %q", got) }
+	if got != contract.StopBudgetDecisionCalls {
+		t.Fatalf("got stop reason %q", got)
+	}
 }

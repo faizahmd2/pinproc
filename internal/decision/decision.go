@@ -7,26 +7,26 @@ import (
 type QuestionType string
 
 const (
-	QNoul QuestionType = "noul"
+	QNoul   QuestionType = "noul"
 	QChoice QuestionType = "choice"
-	QScore QuestionType = "score"
+	QScore  QuestionType = "score"
 )
 
 type Question struct {
-	Type QuestionType `json:"type"`
-	Instructions string `json:"instructions"`
-	Criteria map[string]string `json:"criteria,omitempty"`
-	Levels []string `json:"levels,omitempty"`
+	Type         QuestionType      `json:"type"`
+	Instructions string            `json:"instructions"`
+	Criteria     map[string]string `json:"criteria,omitempty"`
+	Levels       []string          `json:"levels,omitempty"`
 }
 
 type Answer struct {
-	Type QuestionType `json:"type"`
-	Noul float64 `json:"noul,omitempty"`
-	Choice string `json:"choice,omitempty"`
-	Score float64 `json:"score,omitempty"`
-	Confidence float64 `json:"confidence,omitempty"`
+	Type          QuestionType       `json:"type"`
+	Noul          float64            `json:"noul,omitempty"`
+	Choice        string             `json:"choice,omitempty"`
+	Score         float64            `json:"score,omitempty"`
+	Confidence    float64            `json:"confidence,omitempty"`
 	Probabilities map[string]float64 `json:"probabilities,omitempty"`
-	Legend map[string]string `json:"legend,omitempty"`
+	Legend        map[string]string  `json:"legend,omitempty"`
 }
 
 type Provider interface {

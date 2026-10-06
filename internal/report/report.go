@@ -1,7 +1,6 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,54 +11,23 @@ import (
 	"github.com/faizahmd2/pinproc/internal/contract"
 )
 
-const reportFile = "report.json"
+const reportFile = "report.md"
 
-func Failure(started time.Time, hint, reason string, stop contract.StopReason) *contract.Investigation {
-	if started.IsZero() {
-		started = time.Now()
-	}
-	host, _ := os.Hostname()
-	return &contract.Investigation{
-		SchemaVersion:     contract.SchemaVersion,
-		Host:              host,
-		Hint:              hint,
-		StartedAt:         started,
-		IncidentCheckedAt: started,
-		StopReason:        stop,
-		Limitations:       []string{"investigation failed completely: " + reason},
-	}
-}
-
-func Write(inv *contract.Investigation, root string) error {
-	if inv == nil {
-		return fmt.Errorf("investigation is nil")
-	}
-	if inv.StartedAt.IsZero() {
-		inv.StartedAt = time.Now()
-	}
-	if inv.IncidentCheckedAt.IsZero() {
-		inv.IncidentCheckedAt = inv.StartedAt
-	}
+// WriteText stores the rendered report (plain text) for `pinproc report --last`.
+func WriteText(root, text string) error {
 	if err := os.MkdirAll(root, 0750); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(inv, "", "  ")
-	if err != nil {
-		return err
-	}
-	return atomic(filepath.Join(root, reportFile), append(b, '\n'))
+	return atomic(filepath.Join(root, reportFile), []byte(text))
 }
 
-func Read(root string) (*contract.Investigation, error) {
+// ReadText returns the last stored report text, or os.ErrNotExist if none.
+func ReadText(root string) (string, error) {
 	b, err := os.ReadFile(filepath.Join(root, reportFile))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	var inv contract.Investigation
-	if err := json.Unmarshal(b, &inv); err != nil {
-		return nil, err
-	}
-	return &inv, nil
+	return string(b), nil
 }
 
 func EnsureWritable(root string) error {
@@ -86,57 +54,6 @@ func EnsureWritable(root string) error {
 		return err
 	}
 	return os.Remove(name)
-}
-
-// MigrateLegacy converts the V1 rotating report directory into the V2 single-report store.
-func MigrateLegacy(root string) error {
-	legacy := filepath.Join(root, "reports")
-	info, err := os.Stat(legacy)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("legacy report path %s is not a directory", legacy)
-	}
-
-	if _, err := os.Stat(filepath.Join(root, reportFile)); os.IsNotExist(err) {
-		if latest, latestErr := os.ReadFile(filepath.Join(legacy, "latest.txt")); latestErr == nil {
-			id := strings.TrimSpace(string(latest))
-			if id != "" {
-				legacyReport := filepath.Join(legacy, id, "investigation.json")
-				data, readErr := os.ReadFile(legacyReport)
-				if readErr != nil {
-					return fmt.Errorf("read legacy report %s: %w", legacyReport, readErr)
-				}
-				var inv contract.Investigation
-				if err := json.Unmarshal(data, &inv); err != nil {
-					return fmt.Errorf("parse legacy report %s: %w", legacyReport, err)
-				}
-				if inv.IncidentCheckedAt.IsZero() {
-					inv.IncidentCheckedAt = inv.StartedAt
-				}
-				normalized, err := json.MarshalIndent(inv, "", "  ")
-				if err != nil {
-					return fmt.Errorf("normalize legacy report %s: %w", legacyReport, err)
-				}
-				if err := atomic(filepath.Join(root, reportFile), append(normalized, '\n')); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if _, err := os.Stat(filepath.Join(root, "state.json")); os.IsNotExist(err) {
-		if data, readErr := os.ReadFile(filepath.Join(legacy, "state.json")); readErr == nil {
-			var old InspectionState
-			if json.Unmarshal(data, &old) == nil {
-				_ = WriteState(root, old)
-			}
-		}
-	}
-	return os.RemoveAll(legacy)
 }
 
 func RenderMarkdown(inv *contract.Investigation) string {
@@ -456,17 +373,6 @@ func loadTrend(load1, load15 float64) string {
 	default:
 		return " · steady"
 	}
-}
-
-func kernelShort(kernel string) string {
-	kernel = strings.TrimSpace(kernel)
-	if strings.HasPrefix(kernel, "Linux version ") {
-		kernel = strings.TrimPrefix(kernel, "Linux version ")
-	}
-	if i := strings.IndexByte(kernel, ' '); i >= 0 {
-		kernel = kernel[:i]
-	}
-	return kernel
 }
 
 func humanDuration(d time.Duration) string {

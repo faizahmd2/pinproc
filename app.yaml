@@ -1,20 +1,12 @@
 # pinproc managed configuration template.
 # Installed systems keep active configuration in /etc/pinproc/config.yaml.
-# Change it with sudo pinproc setup ..., not by editing files.
+# pinproc watches the host and captures incidents by itself (no socket, no API).
 
 version: 1
 
 app:
   name: pinproc
   log_level: info
-
-server:
-  listen: 127.0.0.1:8080
-  api_key: ""
-
-ai:
-  provider: ""
-  config: {}
 
 narrator:
   enabled: true
@@ -25,7 +17,15 @@ source:
 report:
   max_findings: 5
 
+# Optional: POST each captured report (as plain text) to one URL. This is the only
+# traffic pinproc ever sends. Leave disabled for a fully offline host.
 callback:
   enabled: false
   url: ""
   timeout: 5s
+
+# Optional: tune when an incident is captured (omit to use conservative defaults).
+# monitor:
+#   cpu: { arm_util: 80, cap_util: 90, sustain: 60s }
+#   mem: { arm_util: 85, cap_util: 95, sustain: 60s }
+#   io:  { arm_util: 80, cap_util: 95, sustain: 30s }

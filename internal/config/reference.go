@@ -6,21 +6,13 @@ import (
 )
 
 const ReferenceYAML = `# pinproc managed configuration
-# Use "sudo pinproc setup ..." to change the installed configuration.
+# pinproc watches the host and captures incidents by itself (no socket, no API).
 
 version: 1
 
 app:
   name: pinproc
   log_level: info
-
-server:
-  listen: 127.0.0.1:8080
-  api_key: ""
-
-ai:
-  provider: ""
-  config: {}
 
 narrator:
   enabled: true
@@ -31,13 +23,23 @@ source:
 report:
   max_findings: 5
 
+# Optional: POST each captured report (as plain text) to one URL. This is the only
+# traffic pinproc ever sends. Leave disabled for a fully offline host.
 callback:
   enabled: false
   url: ""
   timeout: 5s
+
+# Optional: tune when an incident is captured. Omit to use conservative defaults.
+# monitor:
+#   cpu: { arm_util: 80, cap_util: 90, sustain: 60s }
+#   mem: { arm_util: 85, cap_util: 95, sustain: 60s }
+#   io:  { arm_util: 80, cap_util: 95, sustain: 30s }
 `
 
 func WriteReference(path string, force bool) error {
-	if _, err := os.Stat(path); err == nil && !force { return fmt.Errorf("refusing to overwrite %s; pass --force", path) }
+	if _, err := os.Stat(path); err == nil && !force {
+		return fmt.Errorf("refusing to overwrite %s; pass --force", path)
+	}
 	return os.WriteFile(path, []byte(ReferenceYAML), 0600)
 }
