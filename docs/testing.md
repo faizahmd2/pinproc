@@ -55,9 +55,8 @@ sudo sed -i '/^monitor:/,$d' /etc/pinproc/config.yaml && sudo systemctl restart 
 ## 2. How to read a report
 
 ```bash
-pinproc report            # run a fresh investigation now, print it (markdown)
+pinproc report            # run a fresh investigation now, print it (text)
 pinproc report --last     # show the last auto-captured incident (no new run)
-pinproc report --last --json | jq .          # full machine-readable report
 pinproc report --dimension memory            # focus a manual run on one resource
 pinproc report --hint "checkout latency"     # pass operator context
 ```
@@ -184,32 +183,17 @@ rm -f "$HOME/f.dat"
 ## 9. Delivery to your channel (callback)
 
 ```bash
-# point pinproc at any HTTP sink; it POSTs the JSON report on each capture
+# POST each captured report (as plain text) to any HTTP sink
 sudo pinproc setup callback --url https://your-endpoint.example/pinproc
-# quick local sink to watch payloads:
-#   while true; do printf 'HTTP/1.1 200 OK\r\n\r\n' | nc -l -p 8888 -q1; echo "---"; done
 sudo pinproc setup callback --disable     # turn it off
 ```
 
-This POST is the **only** outbound traffic pinproc makes (plus the AI provider if
-you enable one). With neither configured, it is fully offline.
+This POST is the **only** outbound traffic pinproc ever makes. With it disabled the
+host is fully offline — no socket, no API, nothing listening.
 
 ---
 
-## 10. AI provider (optional, richer reports)
-
-```bash
-sudo apt install pinproc-provider-jev
-sudo pinproc setup ai --provider jev      # prompts for the API key
-pinproc ai status
-```
-
-With AI off, everything above still works on deterministic rules. With AI on, the
-only egress is the provider call, made only on a capture.
-
----
-
-## 11. Footprint / "is it light?"
+## 10. Footprint / "is it light?"
 
 ```bash
 systemctl status pinproc --no-pager | grep -E 'Memory|CPU'    # idle RSS and CPU
@@ -222,7 +206,7 @@ dimension is actively armed.
 
 ---
 
-## 12. Tuning for your real alerts
+## 11. Tuning for your real alerts
 
 Set `monitor:` thresholds (section in §1) to match what *you* consider an incident
 on that class of VM, then `sudo systemctl restart pinproc`. `arm_*` starts watching
