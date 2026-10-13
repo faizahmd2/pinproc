@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -24,6 +25,14 @@ func Validate(cfg *Config) error {
 	}
 	if cfg.Callback.Timeout > 30*time.Second {
 		cfg.Callback.Timeout = 30 * time.Second
+	}
+	switch strings.ToUpper(strings.TrimSpace(cfg.Callback.Method)) {
+	case "":
+		cfg.Callback.Method = "POST"
+	case "POST", "GET":
+		cfg.Callback.Method = strings.ToUpper(strings.TrimSpace(cfg.Callback.Method))
+	default:
+		return fmt.Errorf("callback.method must be POST or GET")
 	}
 	if cfg.Callback.Enabled {
 		u, err := url.Parse(cfg.Callback.URL)

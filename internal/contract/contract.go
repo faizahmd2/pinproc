@@ -273,6 +273,7 @@ type Facts struct {
 type MachineIdentity struct {
 	Hostname     string        `json:"hostname"`
 	PrimaryIP    string        `json:"primary_ip,omitempty"`
+	PublicIP     string        `json:"public_ip,omitempty"`
 	MachineID    string        `json:"machine_id,omitempty"`
 	OS           string        `json:"os,omitempty"`
 	Kernel       string        `json:"kernel,omitempty"`
@@ -292,6 +293,7 @@ type MachineSnapshot struct {
 	MemoryTotalBytes         uint64  `json:"memory_total_bytes,omitempty"`
 	MemoryAvailableBytes     uint64  `json:"memory_available_bytes,omitempty"`
 	MemoryUsedBytes          uint64  `json:"memory_used_bytes,omitempty"`
+	MemoryCacheBytes         uint64  `json:"memory_cache_bytes,omitempty"`
 	MemoryUsedPct            float64 `json:"memory_used_pct,omitempty"`
 	SwapUsedPct              float64 `json:"swap_used_pct,omitempty"`
 	RootDiskPath             string  `json:"root_disk_path,omitempty"`
@@ -313,6 +315,19 @@ type MachineSnapshot struct {
 	TCPTimeWait              uint64  `json:"tcp_time_wait,omitempty"`
 	TCPAlloc                 uint64  `json:"tcp_alloc,omitempty"`
 	TCPListenOverflow        uint64  `json:"tcp_listen_overflow,omitempty"`
+	// Filesystems holds the real on-disk filesystems (pseudo/virtual/snap mounts
+	// excluded), fullest first, for the compact storage-capacity line.
+	Filesystems []FilesystemUsage `json:"filesystems,omitempty"`
+}
+
+// FilesystemUsage is one mounted filesystem's capacity, for the storage summary.
+type FilesystemUsage struct {
+	Path       string  `json:"path"`
+	FSType     string  `json:"fstype,omitempty"`
+	UsedPct    float64 `json:"used_pct"`
+	UsedBytes  uint64  `json:"used_bytes,omitempty"`
+	FreeBytes  uint64  `json:"free_bytes,omitempty"`
+	TotalBytes uint64  `json:"total_bytes,omitempty"`
 }
 
 // IncidentContender is one process's share of a resource at a timeline point.

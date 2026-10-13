@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/faizahmd2/pinproc/internal/callback"
 	"github.com/faizahmd2/pinproc/internal/capability"
 	"github.com/faizahmd2/pinproc/internal/config"
 	"github.com/faizahmd2/pinproc/internal/contract"
@@ -21,7 +23,7 @@ import (
 // newReportCmd prints a report. By default it runs a fresh investigation in-process
 // (no daemon, no socket) and prints it; --last prints the daemon's last capture.
 func newReportCmd() *cobra.Command {
-	var last bool
+	var last, sendCallback bool
 	var hint, dimension string
 	cmd := &cobra.Command{
 		Use:   "report",
@@ -36,6 +38,9 @@ func newReportCmd() *cobra.Command {
 					return err
 				}
 				fmt.Fprint(cmd.OutOrStdout(), text)
+				if sendCallback {
+					return deliverCallback(text)
+				}
 				return nil
 			}
 			text, err := investigateNow(hint, dimension)
@@ -43,13 +48,36 @@ func newReportCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprint(cmd.OutOrStdout(), text)
+			if sendCallback {
+				return deliverCallback(text)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&last, "last", false, "print the daemon's last captured report instead of running now")
+	cmd.Flags().BoolVar(&sendCallback, "callback", false, "also deliver this report to the configured callback URL")
 	cmd.Flags().StringVar(&hint, "hint", "", "operator context, e.g. \"checkout latency\"")
 	cmd.Flags().StringVar(&dimension, "dimension", "", "focus: cpu|memory|io|network|filesystem|limits")
 	return cmd
+}
+
+// deliverCallback sends a report to the configured callback URL on demand, so an
+// operator can exercise the callback without waiting for the daemon to capture an
+// incident. It requires the URL to be set, but ignores callback.enabled (that gate
+// is for automatic delivery; --callback is an explicit request).
+func deliverCallback(text string) error {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.Callback.URL) == "" {
+		return fmt.Errorf("no callback.url configured in %s", config.DiscoverPath())
+	}
+	if err := callback.Send(context.Background(), cfg.Callback.Method, cfg.Callback.URL, cfg.Callback.Timeout, text); err != nil {
+		return fmt.Errorf("callback delivery failed: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "callback delivered to %s via %s\n", cfg.Callback.URL, cfg.Callback.Method)
+	return nil
 }
 
 // investigateNow runs a one-shot investigation in-process and returns the rendered

@@ -241,7 +241,12 @@ func parseMemory(in spec.ParseInput) (contract.Evidence, error) {
 		sec = 1
 	}
 	f := MemoryFacts{AvailablePct: avail, SwapUsedPct: swap, SwapinRate: float64(du(va.Pswpin, vb.Pswpin)) / sec, DirectReclaimRate: float64(du(va.PgscanDirect, vb.PgscanDirect)) / sec, MajorFaultRate: float64(du(va.Pgmajfault, vb.Pgmajfault)) / sec, OOMKillDelta: float64(du(va.OOMKill, vb.OOMKill)), PSIFull: p.Full.Avg10, WorkingsetRefaultRate: float64(du(va.WorkingsetRefault, vb.WorkingsetRefault)) / sec}
-	return ev("ev-machine-memory", "machine.memory", contract.DimensionMemory, contract.L1Machine, f, []contract.Observation{o("mem.available_pct", avail, "percent"), o("mem.swap_used_pct", swap, "percent"), o("mem.swapin_rate", f.SwapinRate, "count_per_sec"), o("mem.direct_reclaim_rate", f.DirectReclaimRate, "count_per_sec"), o("mem.pgmajfault_rate", f.MajorFaultRate, "count_per_sec"), o("mem.oom_kill_delta", f.OOMKillDelta, "count"), o("mem.psi_full_avg10", f.PSIFull, "percent")}, "/proc/meminfo", "/proc/vmstat", "/proc/pressure/memory"), nil
+	// cache = buffers + page cache + reclaimable slab. Surfaced so the report can
+	// show where RAM that is neither free nor process-resident actually went — it is
+	// the difference between htop's "used" bar and the MemAvailable-based used we
+	// report (which matches `top`'s used/avail columns).
+	cache := float64(b.Buffers + b.Cached + b.SReclaimable)
+	return ev("ev-machine-memory", "machine.memory", contract.DimensionMemory, contract.L1Machine, f, []contract.Observation{o("mem.available_pct", avail, "percent"), o("mem.cache_bytes", cache, "bytes"), o("mem.swap_used_pct", swap, "percent"), o("mem.swapin_rate", f.SwapinRate, "count_per_sec"), o("mem.direct_reclaim_rate", f.DirectReclaimRate, "count_per_sec"), o("mem.pgmajfault_rate", f.MajorFaultRate, "count_per_sec"), o("mem.oom_kill_delta", f.OOMKillDelta, "count"), o("mem.psi_full_avg10", f.PSIFull, "percent")}, "/proc/meminfo", "/proc/vmstat", "/proc/pressure/memory"), nil
 }
 
 func parseIO(in spec.ParseInput) (contract.Evidence, error) {

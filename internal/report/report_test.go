@@ -15,6 +15,7 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 		Machine: contract.MachineIdentity{
 			Hostname:     "ip-10-0-0-1",
 			PrimaryIP:    "10.0.0.1",
+			PublicIP:     "203.0.113.5",
 			OS:           "Ubuntu 24.04 LTS",
 			Kernel:       "6.8.0-test",
 			Architecture: "amd64",
@@ -23,7 +24,8 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 		},
 		MachineSnapshot: contract.MachineSnapshot{
 			CPUs: 2, CPUUtilizationPct: 15, Load1: 0.2,
-			MemoryTotalBytes: 8 << 30, MemoryUsedBytes: 3 << 30, MemoryUsedPct: 37.5,
+			MemoryTotalBytes: 8 << 30, MemoryUsedBytes: 3 << 30, MemoryAvailableBytes: 5 << 30,
+			MemoryCacheBytes: 2 << 30, MemoryUsedPct: 37.5,
 			SwapUsedPct: 0, RootDiskPath: "/", RootDiskTotalBytes: 40 << 30,
 			RootDiskUsedBytes: 10 << 30, RootDiskUsedPct: 25,
 			PrimaryDiskDevice: "sda", DiskReadBPS: 2 << 20, DiskWriteBPS: 4 << 20,
@@ -37,15 +39,16 @@ func TestRenderMarkdownUsesMachineIdentityAndSnapshot(t *testing.T) {
 	}
 	got := RenderMarkdown(inv)
 	for _, want := range []string{
-		"pinproc · ip-10-0-0-1 · 10.0.0.1 · 2 vCPU",
+		"pinproc · ip-10-0-0-1 · 203.0.113.5 (public) · 10.0.0.1 (private) · 2 vCPU",
 		"27 Sep 2026, 09:00 PM (IST)",
 		"root filesystem is filling",
 		"## Machine",
-		"CPU: 15% used · load 0.20 / 0.00 / 0.00 (1/5/15m)",
-		"Memory:",
-		"Disk: sda",
-		"Network: RX",
-		"Sockets: 0 · TCP in-use 8",
+		"| Resource | State | Details |",
+		"| **CPU** | 🟢 idle | 15% busy · load 0.20 / 0.00 / 0.00 (1m/5m/15m)",
+		"| **Memory** | 🟢 healthy | 3.0 GiB used · 5.0 GiB free of 8.0 GiB · caches 2.0 GiB · no swap |",
+		"| **Disk I/O** | 🟢 active | `sda` · read 2.0 MB/s · write 4.0 MB/s · 12% of time busy · 1.5 ms latency |",
+		"| **Network** | 🟢 active | in 1.0 MB/s · out 2.0 MB/s · 0.2/s retransmits",
+		"| **Sockets** | 🟢 quiet | 0 open · 8 active · 2 just-closed, clearing (TIME_WAIT) · 0 refused (listen queue overflow) |",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q:\n%s", want, got)
