@@ -948,6 +948,8 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 					s.MemoryUsedBytes = s.MemoryTotalBytes - s.MemoryAvailableBytes
 				}
 				s.MemoryUsedPct = 100 - obs.Value
+			case "mem.cache_bytes":
+				s.MemoryCacheBytes = uint64(obs.Value)
 			case "mem.swap_used_pct":
 				s.SwapUsedPct = obs.Value
 			case "net.rx_bps":
@@ -1027,7 +1029,74 @@ func buildMachineSnapshot(inv *contract.Investigation) contract.MachineSnapshot 
 			}
 		}
 	}
+	s.Filesystems = topFilesystems(inv.Evidence)
 	return s
+}
+
+// topFilesystems extracts the real on-disk filesystems from the machine.filesystem
+// evidence, drops pseudo/virtual/snap mounts (squashfs, overlay, tmpfs, …) that are
+// always ~100% full or RAM-backed and would just be noise, and returns the fullest
+// few so the report can show capacity the way "disk 90% full" alerts do — without a
+// df -h wall of mounts.
+func topFilesystems(ev []contract.Evidence) []contract.FilesystemUsage {
+	var raw struct {
+		Mounts []struct {
+			Path                  string
+			FSType                string
+			UsedPct               float64
+			FreeBytes, TotalBytes uint64
+		}
+	}
+	for _, e := range ev {
+		if e.Capability != "machine.filesystem" {
+			continue
+		}
+		b, _ := json.Marshal(e.Facts)
+		_ = json.Unmarshal(b, &raw)
+		break
+	}
+	var out []contract.FilesystemUsage
+	seen := map[string]bool{}
+	for _, m := range raw.Mounts {
+		if !isStorageFilesystem(m.FSType) || m.TotalBytes == 0 || seen[m.Path] {
+			continue
+		}
+		seen[m.Path] = true
+		used := uint64(0)
+		if m.TotalBytes >= m.FreeBytes {
+			used = m.TotalBytes - m.FreeBytes
+		}
+		out = append(out, contract.FilesystemUsage{
+			Path: m.Path, FSType: m.FSType, UsedPct: m.UsedPct,
+			UsedBytes: used, FreeBytes: m.FreeBytes, TotalBytes: m.TotalBytes,
+		})
+	}
+	// Fullest first; break ties by larger filesystem, then path, so the order is
+	// stable and the genuinely tight mounts lead.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].UsedPct != out[j].UsedPct {
+			return out[i].UsedPct > out[j].UsedPct
+		}
+		if out[i].TotalBytes != out[j].TotalBytes {
+			return out[i].TotalBytes > out[j].TotalBytes
+		}
+		return out[i].Path < out[j].Path
+	})
+	if len(out) > 4 {
+		out = out[:4]
+	}
+	return out
+}
+
+// isStorageFilesystem reports whether a filesystem type is a real on-disk store
+// worth showing capacity for (not a pseudo, RAM, or read-only image mount).
+func isStorageFilesystem(fstype string) bool {
+	switch fstype {
+	case "ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs", "jfs", "reiserfs",
+		"vfat", "fat", "exfat", "ntfs", "ntfs3", "ufs":
+		return true
+	}
+	return false
 }
 
 // isNoiseDevice reports whether a block device is virtual/noise and should not be

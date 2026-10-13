@@ -29,6 +29,7 @@ type NarratorConfig struct {
 type CallbackConfig struct {
 	Enabled bool          `yaml:"enabled"`
 	URL     string        `yaml:"url"`
+	Method  string        `yaml:"method"` // POST (default) or GET; the report is the request body either way
 	Timeout time.Duration `yaml:"timeout"`
 }
 
@@ -158,6 +159,7 @@ func defaults() Config {
 	cfg.Narrator.Enabled = true
 	cfg.Source.ReadTimeout = 2 * time.Second
 	cfg.Report.MaxFindings = 5
+	cfg.Callback.Method = "POST"
 	cfg.Callback.Timeout = 5 * time.Second
 	return cfg
 }

@@ -79,7 +79,7 @@ func (s *captureSink) Capture(ctx context.Context, c monitor.Capture) {
 
 	if s.cfg.Callback.Enabled && strings.TrimSpace(s.cfg.Callback.URL) != "" {
 		go func() {
-			if err := callback.Post(context.Background(), s.cfg.Callback.URL, s.cfg.Callback.Timeout, text); err != nil {
+			if err := callback.Send(context.Background(), s.cfg.Callback.Method, s.cfg.Callback.URL, s.cfg.Callback.Timeout, text); err != nil {
 				logger.Warn("report callback failed", "error", err)
 			}
 		}()

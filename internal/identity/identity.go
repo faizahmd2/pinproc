@@ -228,7 +228,12 @@ func (r *Resolver) ResolveMachine(ctx context.Context) (contract.MachineIdentity
 		if hostname, he := os.Hostname(); he == nil && strings.TrimSpace(hostname) != "" {
 			m.Hostname = strings.TrimSpace(hostname)
 		}
-		m.PrimaryIP = primaryIP()
+		// Derive both addresses from locally-bound interfaces only — no network
+		// call, so the host stays zero-egress. A public IP is reported only when one
+		// is actually bound to an interface (bare metal, some clouds); on AWS/GCP the
+		// public IP is 1:1 NAT'd and never visible here, so we show the private
+		// address and do not reach out to a metadata service to find otherwise.
+		m.PublicIP, m.PrimaryIP = interfaceIPs()
 	}
 	for _, line := range strings.Split(string(first(snap, "os_release")), "\n") {
 		if strings.HasPrefix(line, "PRETTY_NAME=") {
@@ -507,10 +512,15 @@ func redactCmdline(cmd []string) []string {
 	return out
 }
 
-func primaryIP() string {
+// interfaceIPs returns the best public and primary addresses bound to local
+// interfaces, without any network call. public is "" unless a globally-routable
+// address is actually bound here; primary prefers an internal address (the one
+// used to reach the host on its own network), falling back to public, then
+// link-local.
+func interfaceIPs() (public, primary string) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	sort.Slice(ifaces, func(i, j int) bool { return ifaces[i].Name < ifaces[j].Name })
 	var publicIPs, internalIPs, linkLocalIPs []string
@@ -558,15 +568,17 @@ func primaryIP() string {
 		}
 	}
 	if len(publicIPs) > 0 {
-		return publicIPs[0]
+		public = publicIPs[0]
 	}
-	if len(internalIPs) > 0 {
-		return internalIPs[0]
+	switch {
+	case len(internalIPs) > 0:
+		primary = internalIPs[0]
+	case len(publicIPs) > 0:
+		primary = publicIPs[0]
+	case len(linkLocalIPs) > 0:
+		primary = linkLocalIPs[0]
 	}
-	if len(linkLocalIPs) > 0 {
-		return linkLocalIPs[0]
-	}
-	return ""
+	return public, primary
 }
 
 func isPublicAddress(ip net.IP) bool {

@@ -119,7 +119,15 @@ func RenderMarkdown(inv *contract.Investigation) string {
 // headerIdentity renders "host · ip · N vCPU · up 2h".
 func headerIdentity(inv *contract.Investigation) string {
 	parts := []string{displayHost(inv)}
-	if inv.Machine.PrimaryIP != "" {
+	// Prefer the public identifier (what reaches this host from outside); on
+	// AWS/GCP that is never the interface IP. Show the private address too when it
+	// differs, since that is the one used to SSH in.
+	if pub := inv.Machine.PublicIP; pub != "" {
+		parts = append(parts, pub+" (public)")
+		if inv.Machine.PrimaryIP != "" && inv.Machine.PrimaryIP != pub {
+			parts = append(parts, inv.Machine.PrimaryIP+" (private)")
+		}
+	} else if inv.Machine.PrimaryIP != "" {
 		parts = append(parts, inv.Machine.PrimaryIP)
 	}
 	if inv.Machine.CPUs > 0 {
@@ -237,30 +245,171 @@ func renderMachine(b *strings.Builder, inv *contract.Investigation) {
 	}
 	s := inv.MachineSnapshot
 	b.WriteString("## Machine\n\n")
+	// A markdown table: the State column renders as a scannable stack of colour dots
+	// in any previewer (and the dot + word still read fine as plain text in a
+	// terminal). Device names and mount paths are code-styled so they stand out as
+	// identifiers, and jargon is spelled out so the report reads cold.
+	b.WriteString("| Resource | State | Details |\n")
+	b.WriteString("| --- | --- | --- |\n")
+
 	if s.CPUs > 0 {
-		fmt.Fprintf(b, "CPU: %.0f%% used · load %.2f / %.2f / %.2f (1/5/15m)%s\n",
-			s.CPUUtilizationPct, s.Load1, s.Load5, s.Load15, loadTrend(s.Load1, s.Load15))
+		dot, word := cpuStatus(s)
+		trend := strings.TrimPrefix(loadTrend(s.Load1, s.Load15), " · ")
+		if trend != "" {
+			trend = ", " + trend
+		}
+		row(b, "CPU", dot, word, fmt.Sprintf("%.0f%% busy · load %.2f / %.2f / %.2f (1m/5m/15m)%s",
+			s.CPUUtilizationPct, s.Load1, s.Load5, s.Load15, trend))
 	}
 	if s.MemoryTotalBytes > 0 {
-		fmt.Fprintf(b, "Memory: %s / %s used · %.0f%% · swap %.0f%%\n",
-			formatBytes(s.MemoryUsedBytes), formatBytes(s.MemoryTotalBytes), s.MemoryUsedPct, s.SwapUsedPct)
+		// used + free add up to total (unlike htop's used+free+cache) and match
+		// `top`'s used / avail columns; caches are shown apart as reclaimable.
+		msg := fmt.Sprintf("%s used · %s free of %s",
+			formatBytes(s.MemoryUsedBytes), formatBytes(s.MemoryAvailableBytes), formatBytes(s.MemoryTotalBytes))
+		if s.MemoryCacheBytes > 0 {
+			msg += " · caches " + formatBytes(s.MemoryCacheBytes)
+		}
+		msg += " · " + swapPhrase(s.SwapUsedPct)
+		dot, word := memStatus(s)
+		row(b, "Memory", dot, word, msg)
 	}
 	if s.PrimaryDiskDevice != "" {
-		fmt.Fprintf(b, "Disk: %s · read %.1f MB/s · write %.1f MB/s · util %.1f%% · await %.1f ms\n",
-			s.PrimaryDiskDevice, s.DiskReadBPS/1024/1024, s.DiskWriteBPS/1024/1024, s.DiskUtilizationPct, s.DiskAwaitMS)
-	} else if s.RootDiskTotalBytes > 0 {
-		fmt.Fprintf(b, "Disk %s: %s / %s used · %.0f%%\n",
-			s.RootDiskPath, formatBytes(s.RootDiskUsedBytes), formatBytes(s.RootDiskTotalBytes), s.RootDiskUsedPct)
+		dot, word := diskStatus(s)
+		row(b, "Disk I/O", dot, word, fmt.Sprintf("`%s` · read %.1f MB/s · write %.1f MB/s · %.0f%% of time busy · %.1f ms latency",
+			s.PrimaryDiskDevice, s.DiskReadBPS/1024/1024, s.DiskWriteBPS/1024/1024, s.DiskUtilizationPct, s.DiskAwaitMS))
 	}
-	if s.NetworkRxBPS > 0 || s.NetworkTxBPS > 0 {
-		fmt.Fprintf(b, "Network: RX %.1f MB/s · TX %.1f MB/s · retrans %.1f/s\n",
-			s.NetworkRxBPS/1024/1024, s.NetworkTxBPS/1024/1024, s.NetworkRetransmitsPerSec)
+	if detail := storageDetail(s); detail != "" {
+		dot, word := storageStatus(s)
+		row(b, "Storage", dot, word, detail)
+	}
+	if s.NetworkRxBPS > 0 || s.NetworkTxBPS > 0 || s.NetworkRetransmitsPerSec > 0 {
+		dot, word := netStatus(s)
+		row(b, "Network", dot, word, fmt.Sprintf("in %.1f MB/s · out %.1f MB/s · %.1f/s retransmits (sent packets the peer never acked)",
+			s.NetworkRxBPS/1024/1024, s.NetworkTxBPS/1024/1024, s.NetworkRetransmitsPerSec))
 	}
 	if s.SocketsUsed > 0 || s.TCPInUse > 0 || s.TCPTimeWait > 0 || s.TCPListenOverflow > 0 {
-		fmt.Fprintf(b, "Sockets: %d · TCP in-use %d · TIME_WAIT %d · orphan %d · listen overflows %d\n",
-			s.SocketsUsed, s.TCPInUse, s.TCPTimeWait, s.TCPOrphan, s.TCPListenOverflow)
+		dot, word := socketStatus(s)
+		row(b, "Sockets", dot, word, fmt.Sprintf("%d open · %d active · %d just-closed, clearing (TIME_WAIT) · %d refused (listen queue overflow)",
+			s.SocketsUsed, s.TCPInUse, s.TCPTimeWait, s.TCPListenOverflow))
 	}
 	b.WriteString("\n")
+}
+
+// row writes one Machine table row. Pipes inside details are escaped so they can
+// never break the table.
+func row(b *strings.Builder, resource, dot, word, details string) {
+	fmt.Fprintf(b, "| **%s** | %s %s | %s |\n", resource, dot, word, strings.ReplaceAll(details, "|", "\\|"))
+}
+
+// Colour dots for the State column — green=fine, yellow=watch, red=act.
+const (
+	dotOK   = "🟢"
+	dotWarn = "🟡"
+	dotBad  = "🔴"
+)
+
+func swapPhrase(pct float64) string {
+	if pct <= 0 {
+		return "no swap"
+	}
+	return fmt.Sprintf("swap %.0f%%", pct)
+}
+
+// storageDetail renders the fullest real filesystems as "`/path` NN% (free)",
+// fullest first — capacity the way a "disk 90% full" alert reads, not a df dump.
+func storageDetail(s contract.MachineSnapshot) string {
+	fss := s.Filesystems
+	if len(fss) == 0 {
+		// Fall back to the root filesystem when per-mount data is unavailable.
+		if s.RootDiskTotalBytes > 0 {
+			return fmt.Sprintf("`%s` %.0f%% (%s free)", s.RootDiskPath, s.RootDiskUsedPct, formatBytes(s.RootDiskFreeBytes))
+		}
+		return ""
+	}
+	parts := make([]string, 0, len(fss))
+	for _, f := range fss {
+		parts = append(parts, fmt.Sprintf("`%s` %.0f%% (%s free)", f.Path, f.UsedPct, formatBytes(f.FreeBytes)))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func cpuStatus(s contract.MachineSnapshot) (dot, word string) {
+	switch {
+	case s.CPUUtilizationPct >= 90:
+		return dotBad, "saturated"
+	case s.CPUUtilizationPct >= 70:
+		return dotWarn, "busy"
+	case s.CPUUtilizationPct >= 25:
+		return dotOK, "active"
+	default:
+		return dotOK, "idle"
+	}
+}
+
+func memStatus(s contract.MachineSnapshot) (dot, word string) {
+	switch {
+	case s.SwapUsedPct >= 25 || s.MemoryUsedPct >= 90:
+		return dotBad, "critical"
+	case s.MemoryUsedPct >= 75:
+		return dotWarn, "tight"
+	default:
+		return dotOK, "healthy"
+	}
+}
+
+func diskStatus(s contract.MachineSnapshot) (dot, word string) {
+	switch {
+	case s.DiskUtilizationPct >= 80 || s.DiskAwaitMS >= 50:
+		return dotBad, "saturated"
+	case s.DiskUtilizationPct >= 40:
+		return dotWarn, "busy"
+	case s.DiskReadBPS+s.DiskWriteBPS > 0:
+		return dotOK, "active"
+	default:
+		return dotOK, "idle"
+	}
+}
+
+// storageStatus grades on the fullest filesystem shown.
+func storageStatus(s contract.MachineSnapshot) (dot, word string) {
+	worst := s.RootDiskUsedPct
+	for _, f := range s.Filesystems {
+		if f.UsedPct > worst {
+			worst = f.UsedPct
+		}
+	}
+	switch {
+	case worst >= 90:
+		return dotBad, "critical"
+	case worst >= 75:
+		return dotWarn, "filling"
+	default:
+		return dotOK, "healthy"
+	}
+}
+
+func netStatus(s contract.MachineSnapshot) (dot, word string) {
+	switch {
+	case s.NetworkRetransmitsPerSec >= 5:
+		return dotWarn, "lossy"
+	case s.NetworkRxBPS+s.NetworkTxBPS >= 1<<20:
+		return dotOK, "active"
+	default:
+		return dotOK, "idle"
+	}
+}
+
+func socketStatus(s contract.MachineSnapshot) (dot, word string) {
+	switch {
+	case s.TCPListenOverflow > 0:
+		return dotBad, "overflow"
+	case s.TCPTimeWait >= 10000:
+		return dotWarn, "churning"
+	case s.TCPInUse >= 1000:
+		return dotOK, "busy"
+	default:
+		return dotOK, "quiet"
+	}
 }
 
 // renderCause states, definitively, which service caused the incident and which of
