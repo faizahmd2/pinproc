@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -35,6 +36,7 @@ func newServiceCmd() *cobra.Command {
 // runService prepares storage, confirms the host is readable, then runs the
 // read-only self-trigger until the process is asked to stop.
 func runService() error {
+	logLevel.Set(slog.LevelInfo)
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err

@@ -34,6 +34,12 @@ func EnsureWritable(root string) error {
 	if err := os.MkdirAll(root, 0750); err != nil {
 		return err
 	}
+	// A restart that lands mid-probe can leave one behind; clear those first.
+	if stale, _ := filepath.Glob(filepath.Join(root, ".pinproc-startup-*")); len(stale) > 0 {
+		for _, s := range stale {
+			_ = os.Remove(s)
+		}
+	}
 	f, err := os.CreateTemp(root, ".pinproc-startup-*")
 	if err != nil {
 		return err
@@ -154,6 +160,9 @@ func headerTime(inv *contract.Investigation) string {
 	}
 	return "    ·    " + s
 }
+
+// Verdict is the one-sentence summary shown at the top of every report format.
+func Verdict(inv *contract.Investigation) string { return verdict(inv) }
 
 // verdict is the single human sentence at the top.
 func verdict(inv *contract.Investigation) string {

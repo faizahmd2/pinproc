@@ -24,8 +24,10 @@ fi
 install -d -m 0750 -o "$USER_NAME" -g "$GROUP_NAME" "$DATA_DIR"
 install -d -m 0750 -o root -g "$GROUP_NAME" "$CONFIG_DIR"
 
+fresh=0
 if [ ! -e "$CONFIG_FILE" ]; then
     install -m 0640 -o root -g "$GROUP_NAME" "$DEFAULT_CONFIG" "$CONFIG_FILE"
+    fresh=1
 fi
 
 if [ "$created_account" -eq 1 ]; then
@@ -44,4 +46,23 @@ if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
     systemctl enable pinproc.service || true
     systemctl restart pinproc.service || true
+fi
+
+if [ "$fresh" -eq 1 ]; then
+    cat <<'EOF'
+
+pinproc is installed and already watching this machine with its built-in
+defaults (systemctl status pinproc). When CPU, memory, disk I/O or the network
+comes under pressure it captures the incident by itself.
+
+Where should alerts go? (optional — both can be set up any time)
+  sudo pinproc config email      alerts by email, through your own SMTP account
+  sudo pinproc config callback   alerts POSTed to your webhook
+
+Try it now:
+  pinproc                        one look at the machine
+  sudo pinproc report            full machine description (HTML + JSON)
+  pinproc config list            settings in effect
+
+EOF
 fi

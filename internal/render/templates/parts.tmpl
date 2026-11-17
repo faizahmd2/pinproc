@@ -1,0 +1,156 @@
+{{define "head"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="generator" content="pinproc">
+<title>{{.}}</title>
+<style>{{css}}</style>
+</head>{{end}}
+
+{{define "script"}}<script>
+function toggleTheme(){var r=document.documentElement,c=r.getAttribute('data-theme');if(!c){c=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}r.setAttribute('data-theme',c==='dark'?'light':'dark')}
+function toggleAll(sel,btn){var cs=document.querySelectorAll(sel),open=Array.prototype.some.call(cs,function(c){return !c.open});cs.forEach(function(c){c.open=open});if(btn)btn.textContent=open?'Collapse All':'Expand All'}
+</script>{{end}}
+
+{{define "banner"}}<div class="alert-banner {{.Banner.Class}}">
+  <div class="alert-top">
+    <div class="alert-title"><span class="badge {{.Banner.Class}}">{{.Banner.Badge}}</span>{{.Banner.Title}}</div>
+    <div class="meta">{{.Time}}</div>
+  </div>
+  {{if .Banner.Sub}}<div class="alert-sub">{{.Banner.Sub}}</div>{{end}}
+</div>{{end}}
+
+{{define "pillars"}}<div class="pillar-grid">
+{{range .Pillars}}  <div class="pillar {{.Class}}{{if .Focus}} focus{{end}}">
+    <div class="p-head"><span>{{.Name}}</span><span class="c-{{.Class}}">{{.State}}</span></div>
+    <div class="p-stat">{{.Stat}}</div>
+    <div class="p-psi">{{.Path}}<br>{{.Detail}}</div>
+  </div>
+{{end}}</div>{{end}}
+
+{{define "cause"}}{{with .Cause}}<div class="box">
+  <div class="box-head"><span class="box-title">Cause</span><span class="cmd">attributed by service</span></div>
+  <div class="mono" style="font-size:12.5px;font-weight:700">{{.Service}} — <span class="c-crit">{{.Value}}</span></div>
+  <ul class="findings">{{range .Components}}<li class="mono" style="font-size:11.5px">• {{.}}</li>{{end}}{{if .Ports}}<li class="mono" style="font-size:11.5px">listening {{.Ports}}</li>{{end}}</ul>
+</div>{{end}}{{end}}
+
+{{define "findings"}}{{if .D.Findings}}<div class="box">
+  <div class="box-head"><span class="box-title">Also noticed</span><span class="cmd">{{len .D.Findings}} supporting finding{{if gt (len .D.Findings) 1}}s{{end}}</span></div>
+  <ul class="findings">{{range .D.Findings}}<li>{{.Statement}}{{if .Action}}<span class="act">→ {{.Action}}</span>{{end}}{{if .Log}}<span class="logl">log: {{.Log}}</span>{{end}}</li>{{end}}</ul>
+</div>{{end}}{{end}}
+
+{{define "logs"}}{{if .Logs}}<div class="box">
+  <div class="box-head"><span class="box-title">Logs from the incident window</span><span class="cmd">journal + kernel ring buffer · warnings &amp; errors, repeats collapsed</span></div>
+{{range .Logs}}  <div class="log-sec">
+    <div class="log-head"><span class="log-title">{{.Title}}</span><span class="cmd">{{.Cmd}}</span></div>
+    {{if .Note}}<div class="left" style="margin:0 0 4px">{{.Note}}</div>{{end}}
+    {{if .Lines}}<div class="scroll"><table>
+      <tbody>{{range .Lines}}<tr><td style="white-space:nowrap">{{.At}}</td><td><span class="prio c-{{.PrioClass}}">{{.Prio}}</span></td><td style="white-space:nowrap" class="c-muted">{{.Who}}</td><td class="msg">{{.Msg}}{{if .Count}}<span class="cnt">×{{.Count}}</span>{{end}}</td></tr>{{end}}</tbody>
+    </table></div>{{end}}
+  </div>
+{{end}}</div>{{end}}{{end}}
+
+{{define "timeline"}}{{if .Timeline}}<div class="box">
+  <div class="box-head"><span class="box-title">How It Built Up</span><span class="cmd">pre-capture samples</span></div>
+  <div class="left">{{.TLNote}}</div>
+  <div class="scroll"><table>
+    <thead><tr><th>+time</th><th class="num">armed</th><th>top consumer</th><th class="num">cpu</th><th class="num">mem</th><th class="num">io psi</th></tr></thead>
+    <tbody>{{range .Timeline}}<tr><td>{{.At}}</td><td class="num">{{.Armed}}</td><td>{{.Top}}</td><td class="num">{{.CPU}}</td><td class="num">{{.Mem}}</td><td class="num">{{.IO}}</td></tr>{{end}}</tbody>
+  </table></div>
+</div>{{end}}{{end}}
+
+{{define "devices"}}{{if .Devices}}<div class="box">
+  <div class="box-head"><span class="box-title">Block I/O &amp; Interface Queue Pressure</span><span class="cmd">iostat -xz 1 1 &amp;&amp; ip -s link</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Device / Metric</th><th class="num">Read / RX</th><th class="num">Write / TX</th><th class="num">Queue / Drops</th><th class="num">Await / Util</th></tr></thead>
+    <tbody>{{range .Devices}}<tr><td>{{.Name}}</td><td class="num">{{.Read}}</td><td class="num">{{.Write}}</td><td class="num">{{.Queue}}</td><td class="num c-{{.UtilClass}}">{{.Util}}</td></tr>{{end}}</tbody>
+  </table></div>
+</div>{{end}}{{end}}
+
+{{define "services"}}{{if .Services}}<div class="box">
+  <div class="box-head">
+    <span class="box-title">{{if eq .D.Kind "alert"}}Workloads under pressure{{else}}Workloads — what runs here and how it lives{{end}}</span>
+    <div><span class="cmd" style="margin-right:6px">systemd-cgtop -n 1 · ss -tnp</span><button class="btn-toggle" onclick="toggleAll('details.svc-card',this)">Expand All</button></div>
+  </div>
+{{range .Services}}  <details class="svc-card{{if .Cause}} cause{{end}}"{{if .Open}} open{{end}}>
+    <summary class="svc-sum">
+      <span class="svc-name">{{.Rank}}. {{.Name}} <span{{if .Class}} class="c-{{.Class}}"{{end}}>[{{.Badge}}]</span>{{if .Cause}} <span class="badge">CAUSE</span>{{end}}</span>
+      <span class="svc-metrics">{{.Metrics}}</span>
+    </summary>
+    <div class="svc-body">{{range .Groups}}
+      <div class="grp"><div class="grp-title">{{.Title}}</div>{{range .Rows}}
+        <div class="kv-row"><span>{{.K}}</span><span class="kv-val {{.Class}}">{{.V}}</span></div>{{end}}
+      </div>{{end}}
+      {{if .Cmds}}<div class="cmds"><div class="grp-title">Verify</div>{{range .Cmds}}<code>{{.}}</code>{{end}}</div>{{end}}
+    </div>
+  </details>
+{{end}}</div>{{end}}{{end}}
+
+{{define "listeners"}}{{if .Listeners}}<div class="card">
+  <div class="box-head"><span class="box-title">Exposed &amp; local ports</span><span class="cmd">ss -tulpn</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Proto</th><th>Address</th><th class="num">Port</th><th>Service</th><th class="num">PID</th><th class="num">Clients</th><th>Reachable from</th></tr></thead>
+    <tbody>{{range .Listeners}}<tr><td>{{.Proto}}</td><td>{{.Addr}}</td><td class="num">{{.Port}}</td><td>{{.Service}}</td><td class="num">{{.PID}}</td><td class="num">{{.Clients}}</td><td class="c-{{.ScopeClass}}">{{.Scope}}</td></tr>{{end}}</tbody>
+  </table></div>
+</div>{{end}}{{end}}
+
+{{define "checks"}}{{if .Checks}}<div class="card chk">
+  <div class="box-head"><span class="box-title">Host checks</span><span class="cmd">{{.ChecksOK}} ok{{if .ChecksBad}} · {{.ChecksBad}} need attention{{end}}</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th></th><th>Check</th><th>State</th><th>Verify</th></tr></thead>
+    <tbody>{{range .Checks}}<tr><td class="ico c-{{if eq .State "warn"}}warn{{else if eq .State "ok"}}ok{{else}}muted{{end}}">{{.Icon}}</td><td class="label">{{.Name}}<span class="hint">{{.Area}}</span></td><td>{{.Value}}{{if .Hint}}<span class="hint">{{.Hint}}</span>{{end}}</td><td class="vcmd">{{.Cmd}}</td></tr>{{end}}</tbody>
+  </table></div>
+</div>{{end}}{{end}}
+
+{{define "nics"}}{{if .NICs}}<div class="card">
+  <div class="box-head"><span class="box-title">Network interfaces &amp; TCP</span><span class="cmd">ip -s link &amp;&amp; ss -s</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Interface</th><th>Address</th><th>Link</th><th class="num">RX</th><th class="num">TX</th><th class="num">Drops rx/tx</th></tr></thead>
+    <tbody>{{range .NICs}}<tr><td>{{.Name}} <span class="c-muted">{{.State}}</span></td><td>{{.Addr}}</td><td>{{.Link}}</td><td class="num">{{.Rx}}</td><td class="num">{{.Tx}}</td><td class="num">{{.Drops}}</td></tr>{{end}}</tbody>
+  </table></div>
+  <div class="left" style="margin:8px 0 0">{{.NetLine}}</div>
+</div>{{end}}{{end}}
+
+{{define "procs"}}{{if .Procs}}<div class="card">
+  <div class="box-head"><span class="box-title">Top processes</span><span class="cmd">ps -eo pid,user,stat,nlwp,pcpu,rss,args · ls /proc/PID/fd</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>PID</th><th>User</th><th>Service</th><th>State</th><th class="num">Thr</th><th class="num">CPU</th><th class="num">Mem</th><th class="num">Read</th><th class="num">Write</th><th class="num">FDs</th><th>Up</th><th>Command</th></tr></thead>
+    <tbody>{{range .Procs}}<tr><td>{{.PID}}</td><td>{{.User}}</td><td>{{.Service}}</td><td>{{.State}}</td><td class="num">{{.Threads}}</td><td class="num">{{.CPU}}</td><td class="num">{{.Mem}}</td><td class="num">{{.Read}}</td><td class="num">{{.Write}}</td><td class="num">{{.FDs}}</td><td>{{.Up}}</td><td style="word-break:break-all">{{.Cmd}}{{if .Gone}} <span class="gone">(binary replaced — restart to load it)</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div>
+  <div class="left" style="margin:8px 0 0">tasks: {{.S.Tasks.Total}} · running {{.S.Tasks.Running}} · blocked (D) {{.S.Tasks.Blocked}} · zombie {{.S.Tasks.Zombie}} · threads {{.S.Tasks.Threads}}</div>
+</div>{{end}}{{end}}
+
+{{define "specs"}}<div class="spec-grid">
+{{range .Specs}}  <div class="spec-box">
+    <div class="spec-label">{{.Label}}</div>
+    {{range .Vals}}<div class="spec-val">{{.}}</div>{{end}}
+    {{if .Sub}}<div class="spec-sub">{{.Sub}}</div>{{end}}
+  </div>
+{{end}}</div>{{end}}
+
+{{define "breakdown"}}<div class="card">
+  <div class="box-head"><span class="box-title">{{.Title}}</span><span class="cmd">{{.Cmd}}</span></div>
+  {{if .Left}}<div class="left">{{.Left}}</div>{{end}}
+  <div class="bar-wrap">{{range .Segs}}<div class="{{.Class}}" style="{{.Width}}" title="{{.Title}}"></div>{{end}}</div>
+  <div class="scroll"><table>
+    <thead><tr><th>Allocation Bucket</th><th>Kernel / Process Source</th><th class="num">{{.Unit}}</th><th class="num">% Total</th></tr></thead>
+    <tbody>
+{{range .Rows}}      <tr><td class="label"><span class="dot {{.Class}}"></span>{{.Label}}</td><td class="src">{{if .Detail}}<b>{{.Detail}}</b>{{else}}{{.Source}}{{end}}</td><td class="num">{{.Value}}</td><td class="num">{{.Pct}}</td></tr>
+{{end}}      <tr class="total-row"><td class="label">{{.TotalLabel}}</td><td>{{.TotalBy}}</td><td class="num">{{.TotalValue}}</td><td class="num">100.0%</td></tr>
+    </tbody>
+  </table></div>
+  {{if .IO}}<div class="left" style="margin:8px 0 0">{{.IO}}</div>{{end}}
+  {{if .Mounts}}<details class="more"><summary>Expand mounted filesystems (df -h)</summary>
+    <div class="scroll"><table style="margin-top:8px">
+      <thead><tr><th>Mount</th><th>Device</th><th>FS</th><th class="num">Size</th><th class="num">Used</th><th class="num">Avail</th><th class="num">Use%</th><th class="num">Inodes</th></tr></thead>
+      <tbody>{{range .Mounts}}<tr><td>{{.Path}}</td><td>{{.Device}}</td><td>{{.FS}}</td><td class="num">{{.Size}}</td><td class="num">{{.Used}}</td><td class="num">{{.Avail}}</td><td class="num c-{{.Class}}">{{.UsePct}}</td><td class="num">{{.Inode}}</td></tr>{{end}}</tbody>
+    </table></div>
+  </details>{{end}}
+  {{if .More}}<details class="more"><summary>{{.MoreTitle}}</summary>
+    <table style="margin-top:8px">{{range .More}}<tr><td>{{.K}}</td><td class="num">{{.V}}</td></tr>{{end}}</table>
+  </details>{{end}}
+</div>{{end}}
+
+{{define "notes"}}{{if .Notes}}<ul class="notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<div class="foot">{{.Footer}}</div>{{end}}

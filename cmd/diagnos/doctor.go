@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/faizahmd2/pinproc/internal/config"
@@ -134,11 +135,30 @@ func runDoctor() []checkResult {
 		add("trigger mode", statusWarn, "PSI unavailable; using utilization/load only")
 	}
 
-	// Last captured report, if any.
-	if b, err := os.Stat(filepath.Join(config.DataDirectory, "report.md")); err == nil {
-		add("last report", statusOK, "captured "+b.ModTime().Format("02 Jan 15:04"))
+	// Delivery: where alerts go, and the cooldown between them.
+	if cfg, err := config.Load(cfgPath); err == nil {
+		switch {
+		case cfg.Email.Enabled:
+			add("alert email", statusOK, fmt.Sprintf("%s:%d %s → %s (dry-run: sudo pinproc config email --test)", cfg.Email.Host, cfg.Email.Port, cfg.Email.Security, strings.Join(cfg.Email.To, ", ")))
+		default:
+			add("alert email", statusOK, "off — sudo pinproc config email")
+		}
+		switch {
+		case cfg.Callback.Enabled:
+			add("alert callback", statusOK, cfg.Callback.Method+" "+cfg.Callback.URL+" ("+cfg.Callback.Format+")")
+		default:
+			add("alert callback", statusOK, "off — sudo pinproc config callback --url …")
+		}
+		add("alert cooldown / timezone", statusOK, cfg.Alerts.Cooldown.String()+" per resource · times in "+cfg.Report.Timezone)
+	}
+
+	// Last captured alert, if any.
+	if b, err := os.Stat(filepath.Join(config.DataDirectory, "alert.json")); err == nil {
+		add("last alert", statusOK, "captured "+b.ModTime().Format("02 Jan 15:04")+" · "+filepath.Join(config.DataDirectory, "alert.html"))
+	} else if b, err := os.Stat(filepath.Join(config.DataDirectory, "report.md")); err == nil {
+		add("last alert", statusOK, "captured "+b.ModTime().Format("02 Jan 15:04"))
 	} else {
-		add("last report", statusOK, "none yet")
+		add("last alert", statusOK, "none yet")
 	}
 
 	return out

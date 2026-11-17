@@ -10,79 +10,82 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/faizahmd2/pinproc/internal/aggregate"
-	"github.com/faizahmd2/pinproc/internal/callback"
-	"github.com/faizahmd2/pinproc/internal/capability"
 	"github.com/faizahmd2/pinproc/internal/config"
 	"github.com/faizahmd2/pinproc/internal/contenders"
 	"github.com/faizahmd2/pinproc/internal/contract"
-	drules "github.com/faizahmd2/pinproc/internal/decision/rules"
+	"github.com/faizahmd2/pinproc/internal/deliver"
+	"github.com/faizahmd2/pinproc/internal/doc"
 	"github.com/faizahmd2/pinproc/internal/dots"
 	"github.com/faizahmd2/pinproc/internal/engine"
 	"github.com/faizahmd2/pinproc/internal/identity"
+	"github.com/faizahmd2/pinproc/internal/inventory"
 	"github.com/faizahmd2/pinproc/internal/monitor"
 	"github.com/faizahmd2/pinproc/internal/netmap"
 	"github.com/faizahmd2/pinproc/internal/pressure"
-	"github.com/faizahmd2/pinproc/internal/report"
-	"github.com/faizahmd2/pinproc/internal/rules"
 	"github.com/faizahmd2/pinproc/internal/source"
 )
 
-// (enrich/abstract layer will build on this capture pipeline)
-
-// captureSink turns a confirmed incident into a full, cross-dimension report. The
-// armed dimension focuses the engine, but the engine still sweeps every resource,
-// so a CPU trigger still surfaces memory/io owners. The pre-capture dots become the
-// report's incident timeline.
+// captureSink turns a confirmed incident into a Document: the engine (cause,
+// findings) and the inventory (machine picture) run in parallel, the result is
+// saved as alert.json + alert.html, and delivery is handed to the dispatcher in
+// the background. The armed dimension focuses the engine, but every resource is
+// still swept, and the pre-capture dots become the report's timeline.
 type captureSink struct {
 	cfg       *config.Config
 	reportDir string
 	mu        *sync.Mutex // shared so auto-capture and any manual run never overlap
+	dispatch  *deliver.Dispatcher
 }
 
-func (s *captureSink) Capture(ctx context.Context, c monitor.Capture) {
+func (s *captureSink) Capture(parent context.Context, c monitor.Capture) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	src := source.NewLocalWithTimeout("/proc", "/sys", 8<<20, s.cfg.Source.ReadTimeout)
-	defer src.Close()
-	reg, err := capability.BuildBuiltin()
-	if err != nil {
-		logger.Error("capture: capability graph unavailable", "error", err)
-		return
-	}
-	eng := engine.New(engine.Options{
-		Source: src, Registry: reg, Rules: rules.Default(), Decision: drules.New(),
-		Identity: identity.New(src), Budget: contract.BudgetNormal(), ParallelWidth: 3,
-		MaxFindings: s.cfg.Report.MaxFindings, Logger: logger,
-	})
-	inv, err := eng.Run(ctx, engine.Request{
+	// The machine is in trouble right now, so every stage is bounded: whatever
+	// finished inside the deadline becomes the alert. Nothing here may stall the
+	// watcher for long or leave the incident unreported.
+	ctx, cancel := context.WithTimeout(parent, captureDeadline)
+	defer cancel()
+	req := engine.Request{
 		ID:        fmt.Sprintf("inc-%d", c.FiredAt.UnixNano()),
 		Host:      localHostName(),
 		Trigger:   "auto:" + string(c.Dimension),
 		Dimension: c.Dimension,
-	})
-	if err != nil {
-		logger.Warn("capture investigation failed", "error", err)
-		return
 	}
-	inv.Incident = toIncident(c)
-	inv.Incident.Cause = buildCause(ctx, src, inv, c.Dimension)
-
-	text := report.RenderMarkdown(inv)
-	if err := report.WriteText(s.reportDir, text); err != nil {
+	inv, snap, err := collectBoth(ctx, s.cfg, req, inventory.AlertOptions(), func(inv *contract.Investigation, src source.Source) {
+		inv.Incident = toIncident(c)
+		inv.Incident.Cause = buildCause(ctx, src, inv, c.Dimension)
+	})
+	degraded := ""
+	if err != nil || inv == nil {
+		// The attribution engine did not finish; still report what is known: the
+		// timeline the watcher recorded and the machine picture.
+		logger.Warn("capture: engine did not finish, sending a degraded alert", "error", err)
+		inv = &contract.Investigation{ID: req.ID, Trigger: req.Trigger, Host: req.Host}
+		degraded = fmt.Sprintf("attribution engine did not finish (%v) — cause taken from the machine snapshot", err)
+	}
+	if inv.Incident == nil {
+		inv.Incident = toIncident(c)
+	}
+	if inv.Incident.Cause == nil {
+		inv.Incident.Cause = snapshotCause(snap, c.Dimension)
+	}
+	d := buildDocument(s.cfg, doc.KindAlert, inv, snap)
+	d.TriggerDetail = triggerDetail(s.cfg.Monitor, c)
+	if degraded != "" {
+		d.Notes = append(d.Notes, degraded)
+	}
+	attachLogs(parent, d, c.StartedAt.Add(-2*time.Minute))
+	if _, _, err := writeOutputs(s.cfg, s.reportDir, "alert", d); err != nil {
 		logger.Error("capture: report write failed", "error", err)
 		return
 	}
-	logger.Info("incident captured", "dimension", c.Dimension, "reason", c.Reason, "dots", len(c.Dots))
-
-	if s.cfg.Callback.Enabled && strings.TrimSpace(s.cfg.Callback.URL) != "" {
-		go func() {
-			if err := callback.Send(context.Background(), s.cfg.Callback.Method, s.cfg.Callback.URL, s.cfg.Callback.Timeout, text); err != nil {
-				logger.Warn("report callback failed", "error", err)
-			}
-		}()
+	logger.Info("incident captured", "dimension", c.Dimension, "reason", c.Reason, "dots", len(c.Dots), "took", time.Since(c.FiredAt).Round(time.Millisecond))
+	if s.dispatch != nil {
+		s.dispatch.Fire(d) // async, cooldown-gated; never blocks the monitor
 	}
 }
 
@@ -273,7 +276,8 @@ func processRowsFromEvidence(inv *contract.Investigation) []procRowView {
 // runMonitor builds and runs the read-only pull trigger until ctx is cancelled.
 func runMonitor(ctx context.Context, cfg *config.Config, reportDir string, mu *sync.Mutex) error {
 	cores := runtime.NumCPU()
-	sink := &captureSink{cfg: cfg, reportDir: reportDir, mu: mu}
+	sink := &captureSink{cfg: cfg, reportDir: reportDir, mu: mu,
+		dispatch: &deliver.Dispatcher{Cfg: cfg, StateDir: reportDir, Log: logger}}
 	m := monitor.New(cfg.Monitor, pressure.NewReader("/proc", cores), contenders.NewSampler("/proc"), sink)
 	logger.Info("pinproc self-trigger active", "mode", "pull", "calm", cfg.Monitor.CalmCadence, "armed", cfg.Monitor.ArmedCadence)
 	return m.Run(ctx)

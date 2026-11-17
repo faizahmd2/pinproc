@@ -1,0 +1,26 @@
+{{template "head" (printf "%s · machine report" .S.Host.Hostname)}}
+<body>
+<div class="container">
+  <div class="header rule">
+    <h1>{{.S.Host.Hostname}}{{if .HostIP}} <span>({{.HostIP}})</span>{{end}}{{if .D.Tag}} · {{.D.Tag}}{{end}}</h1>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="meta">{{.Time}}</div>
+      <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">🌓</button>
+    </div>
+  </div>
+
+  {{template "specs" .}}
+  {{template "pillars" .}}
+  {{template "services" .}}
+  {{template "listeners" .}}
+  {{template "breakdown" .Mem}}
+  {{template "breakdown" .CPU}}
+  {{range .Disks}}{{template "breakdown" .}}{{end}}
+  {{template "nics" .}}
+  {{template "checks" .}}
+  {{template "procs" .}}
+  {{template "notes" .}}
+</div>
+{{template "script"}}
+</body>
+</html>
