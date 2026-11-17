@@ -11,8 +11,9 @@ import (
 )
 
 func newConfigCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "config", Short: "inspect managed configuration"}
-	cmd.AddCommand(newConfigShowCmd(), newConfigValidateCmd())
+	cmd := &cobra.Command{Use: "config", Short: "show, validate and change configuration (" + config.ConfigPath + ")"}
+	cmd.AddCommand(newConfigShowCmd(), newConfigValidateCmd(), newConfigCallbackCmd(), newConfigEmailCmd(),
+		newConfigTimezoneCmd(), newConfigCooldownCmd(), newConfigTagCmd())
 	return cmd
 }
 
@@ -41,13 +42,16 @@ func managedUnreadableErr() error {
 }
 
 func newConfigShowCmd() *cobra.Command {
-	return &cobra.Command{Use: "show", RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "show", Short: "print the effective configuration (secrets masked)", RunE: func(cmd *cobra.Command, args []string) error {
 		if err := ensureManagedConfigReadable(); err != nil {
 			return err
 		}
 		cfg, err := config.Load(cfgPath)
 		if err != nil {
 			return err
+		}
+		if cfg.Email.Password != "" {
+			cfg.Email.Password = "******** (hidden)"
 		}
 		data, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -59,7 +63,7 @@ func newConfigShowCmd() *cobra.Command {
 }
 
 func newConfigValidateCmd() *cobra.Command {
-	return &cobra.Command{Use: "validate", RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "validate", Short: "check the configuration file", RunE: func(cmd *cobra.Command, args []string) error {
 		if err := ensureManagedConfigReadable(); err != nil {
 			return err
 		}

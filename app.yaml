@@ -1,6 +1,8 @@
 # pinproc managed configuration template.
 # Installed systems keep active configuration in /etc/pinproc/config.yaml.
 # pinproc watches the host and captures incidents by itself (no socket, no API).
+# Change settings with `sudo pinproc config <callback|email|timezone|cooldown|tag>`
+# or edit this file and run `sudo systemctl restart pinproc`.
 
 version: 1
 
@@ -16,13 +18,41 @@ source:
 
 report:
   max_findings: 5
+  # Times in reports, alerts, emails and the terminal view.
+  # UTC (default) | IST | an IANA name like Asia/Kolkata | an offset like +05:30
+  timezone: UTC
+  # Optional label shown in report headers, e.g. production
+  tag: ""
 
-# Optional: POST each captured report (as plain text) to one URL. This is the only
-# traffic pinproc ever sends. Leave disabled for a fully offline host.
+# Optional: send each captured alert (and `pinproc report`) to one URL.
+# format: html (the self-contained page, default) | json (the full document) | text
 callback:
   enabled: false
   url: ""
+  method: POST
+  format: html
   timeout: 5s
+
+# Optional: email alerts through YOUR SMTP server (pinproc ships no provider).
+# Set up interactively with `sudo pinproc config email`; test with --test.
+# security: starttls (587, default) | tls (465) | none (local relay only)
+email:
+  enabled: false
+  host: ""
+  port: 587
+  security: starttls
+  username: ""
+  # password is written by `pinproc config email`; or point to a file instead:
+  # password_file: /etc/pinproc/smtp.pass
+  from: ""
+  to: []
+  timeout: 15s
+  attach_report: true
+
+# Automatic alerts are sent at most once per resource per cooldown (manual
+# `pinproc alert` / `pinproc report` sends ignore it).
+alerts:
+  cooldown: 30m
 
 # Optional: tune when an incident is captured (omit to use conservative defaults).
 # monitor:

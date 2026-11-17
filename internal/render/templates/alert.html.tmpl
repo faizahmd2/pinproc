@@ -1,0 +1,19 @@
+{{template "head" (printf "[%s] %s · %s" .Banner.Badge .S.Host.Hostname .D.Headline)}}
+<body>
+<div class="container">
+  <div class="header">
+    <div class="meta">VM: {{if .HostIP}}{{.HostIP}} ({{.S.Host.Hostname}}){{else}}{{.S.Host.Hostname}}{{end}}{{if .S.Host.OS}} · {{.S.Host.OS}}{{end}}{{if .S.Host.Kernel}} · {{.S.Host.Kernel}}{{end}}</div>
+    <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">🌓</button>
+  </div>
+  {{template "banner" .}}
+  {{template "pillars" .}}
+  {{template "cause" .}}
+  {{template "timeline" .}}
+  {{template "findings" .}}
+  {{template "devices" .}}
+  {{template "services" .}}
+  {{template "notes" .}}
+</div>
+{{template "script"}}
+</body>
+</html>

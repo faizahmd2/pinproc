@@ -55,14 +55,20 @@ sudo sed -i '/^monitor:/,$d' /etc/pinproc/config.yaml && sudo systemctl restart 
 ## 2. How to read a report
 
 ```bash
-pinproc report            # run a fresh investigation now, print it (text)
-pinproc report --last     # show the last auto-captured incident (no new run)
+pinproc                         # live view; pinproc --once prints one snapshot
+sudo pinproc report             # detailed report → report.html/json (paths printed), sent to enabled channels
+sudo pinproc report --no-send   # just write the files
+pinproc report --last           # show the last auto-captured incident as text (no new run)
+sudo pinproc alert --last       # re-send the last captured incident to every channel
 pinproc report --dimension memory            # focus a manual run on one resource
 pinproc report --hint "checkout latency"     # pass operator context
 ```
 
-A captured report reads: **verdict → ## Cause (service + components) → ## Incident
-timeline → ## Machine → ## Notes**.
+The service writes each incident to `/var/lib/pinproc/alert.json` (the source of
+truth) plus `alert.html` and the classic text `report.md`. The text reads:
+**verdict → ## Cause (service + components) → ## Incident timeline → ## Machine →
+## Notes**. The HTML alert adds the four resource pillars, block/NIC queues and the
+top services with binary, cgroup, cgroup PSI and OOM score.
 
 ---
 
@@ -180,16 +186,26 @@ rm -f "$HOME/f.dat"
 
 ---
 
-## 9. Delivery to your channel (callback)
+## 9. Delivery to your channels (callback, email)
 
 ```bash
-# POST each captured report (as plain text) to any HTTP sink
-sudo pinproc setup callback --url https://your-endpoint.example/pinproc
-sudo pinproc setup callback --disable     # turn it off
+# POST each captured alert (HTML page by default; --format json|text) to any HTTP sink
+sudo pinproc config callback --url https://your-endpoint.example/pinproc --test
+sudo pinproc config callback --disable     # turn it off
+
+# Email through your own SMTP account (interactive; password prompt is hidden)
+sudo pinproc config email
+sudo pinproc config email --test
+sudo pinproc alert email                   # a real alert page, now
+
+sudo pinproc config cooldown 30m           # one automatic alert per resource per 30m
+sudo pinproc config timezone IST           # default UTC
 ```
 
-This POST is the **only** outbound traffic pinproc ever makes. With it disabled the
-host is fully offline — no socket, no API, nothing listening.
+Automatic alerts are sent in the background after the capture is saved, at most
+once per resource per cooldown (`/var/lib/pinproc/delivery-state.json` records the
+last send). Callback and SMTP are the **only** outbound traffic pinproc makes. With
+both disabled the host is fully offline — no socket, no API, nothing listening.
 
 ---
 

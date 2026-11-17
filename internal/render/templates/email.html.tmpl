@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>{{.E.Subject}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color:#f1f5f9;padding:24px 0;">
+<tr><td align="center">
+<table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;background-color:#ffffff;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;">
+
+  <tr><td style="background-color:{{.E.Color}};padding:16px 20px;color:#ffffff;">
+    <table border="0" cellpadding="0" cellspacing="0" width="100%"><tr>
+      <td style="font-size:13px;font-weight:bold;font-family:monospace;letter-spacing:0.05em;">{{.E.BannerText}}</td>
+      <td align="right" style="font-size:11px;font-family:monospace;opacity:0.9;">{{.V.Time}}</td>
+    </tr></table>
+  </td></tr>
+
+  <tr><td style="background-color:#f8fafc;padding:14px 20px;border-bottom:1px solid #e2e8f0;">
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-size:12px;font-family:monospace;">
+      <tr>
+        <td style="color:#64748b;width:50%;">HOST: <strong style="color:#0f172a;">{{.V.S.Host.Hostname}}</strong></td>
+        <td style="color:#64748b;width:50%;">IP: <strong style="color:#0f172a;">{{if .V.HostIP}}{{.V.HostIP}}{{else}}n/a{{end}}</strong></td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;padding-top:4px;">ARCH: <strong style="color:#0f172a;">{{.E.Arch}}</strong></td>
+        <td style="color:#64748b;padding-top:4px;">DISK: <strong style="color:#0f172a;">{{.E.Disk}}</strong></td>
+      </tr>
+      {{if .V.S.Host.OS}}<tr><td colspan="2" style="color:#64748b;padding-top:4px;">OS: <strong style="color:#0f172a;">{{.V.S.Host.OS}} · {{.V.S.Host.Kernel}} · up {{.E.Uptime}}</strong></td></tr>{{end}}
+    </table>
+  </td></tr>
+
+  <tr><td style="padding:20px;">
+    <p style="margin:0 0 8px 0;font-size:12px;font-weight:bold;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;">{{if eq .V.D.Kind "alert"}}Incident Summary{{else}}Machine Summary{{end}}</p>
+    <div style="background-color:{{.E.SoftBg}};border-left:3px solid {{.E.Color}};padding:10px 14px;font-size:13px;color:{{.E.SoftText}};line-height:1.45;">
+      <strong>{{.V.D.Headline}}</strong>{{if .V.D.TriggerDetail}}<br><code style="font-size:11.5px;">{{.V.D.TriggerDetail}}</code>{{end}}
+    </div>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top:12px;font-size:11.5px;font-family:monospace;">
+      {{range .E.Pillars}}<tr>
+        <td style="padding:3px 0;color:#64748b;width:38%;">{{.Name}}</td>
+        <td style="padding:3px 0;color:#0f172a;">{{.Stat}}</td>
+        <td align="right" style="padding:3px 0;font-weight:bold;color:{{.Color}};">{{.State}}</td>
+      </tr>{{end}}
+    </table>
+  </td></tr>
+
+  {{if .V.D.Findings}}<tr><td style="padding:0 20px 16px 20px;">
+    <p style="margin:0 0 8px 0;font-size:12px;font-weight:bold;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;">What pinproc found</p>
+    {{range .V.D.Findings}}<p style="margin:0 0 6px 0;font-size:12.5px;color:#0f172a;line-height:1.4;">• {{.Statement}}{{if .Action}}<br><span style="font-family:monospace;font-size:11px;color:#0284c7;">→ {{.Action}}</span>{{end}}</p>{{end}}
+  </td></tr>{{end}}
+
+  {{if .E.Memory}}<tr><td style="padding:0 20px 16px 20px;">
+    <p style="margin:0 0 8px 0;font-size:12px;font-weight:bold;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;">Where the RAM is ({{.E.MemTotal}})</p>
+    <table border="0" cellpadding="6" cellspacing="0" width="100%" style="border:1px solid #e2e8f0;border-collapse:collapse;font-family:monospace;font-size:11.5px;">
+      {{range .E.Memory}}<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:6px 8px;color:#0f172a;">{{.Label}}</td><td align="right" style="padding:6px 8px;color:#334155;">{{.Value}}</td><td align="right" style="padding:6px 8px;color:#64748b;">{{.Pct}}</td></tr>{{end}}
+    </table>
+  </td></tr>{{end}}
+
+  <tr><td style="padding:0 20px 20px 20px;">
+    <p style="margin:0 0 10px 0;font-size:12px;font-weight:bold;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;">Top Resource Contenders</p>
+    <table border="0" cellpadding="8" cellspacing="0" width="100%" style="border:1px solid #e2e8f0;border-collapse:collapse;font-family:monospace;font-size:11.5px;">
+      <thead><tr style="background-color:#f8fafc;color:#475569;text-align:left;border-bottom:1px solid #e2e8f0;">
+        <th style="padding:8px;">Service &amp; PID</th><th style="padding:8px;">RAM</th><th style="padding:8px;">CPU</th><th style="padding:8px;">Disk I/O</th>
+      </tr></thead>
+      <tbody>{{range .E.Rows}}<tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:8px;color:#0f172a;"><strong>{{.Name}}</strong>{{if .Cause}} <span style="background:#dc2626;color:#fff;font-size:9px;padding:1px 4px;border-radius:2px;">CAUSE</span>{{end}}<br><span style="color:#64748b;font-size:10px;">PID {{.PID}}{{if .Exe}} · {{.Exe}}{{end}}</span></td>
+        <td style="padding:8px;{{.MemStyle}}">{{.Mem}}</td>
+        <td style="padding:8px;{{.CPUStyle}}">{{.CPU}}</td>
+        <td style="padding:8px;{{.IOStyle}}">{{.IO}}</td>
+      </tr>{{end}}</tbody>
+    </table>
+  </td></tr>
+
+  <tr><td style="background-color:#f8fafc;padding:12px 20px;text-align:center;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;">
+    pinproc · {{if eq .V.D.Kind "alert"}}automated alert{{else}}detailed report{{end}}{{if .E.Attachment}} · full report attached ({{.E.Attachment}}){{end}}
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

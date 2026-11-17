@@ -155,6 +155,9 @@ func headerTime(inv *contract.Investigation) string {
 	return "    ·    " + s
 }
 
+// Verdict is the one-sentence summary shown at the top of every report format.
+func Verdict(inv *contract.Investigation) string { return verdict(inv) }
+
 // verdict is the single human sentence at the top.
 func verdict(inv *contract.Investigation) string {
 	if inv.Incident != nil && inv.Incident.Cause != nil {

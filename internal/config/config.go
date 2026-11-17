@@ -30,7 +30,32 @@ type CallbackConfig struct {
 	Enabled bool          `yaml:"enabled"`
 	URL     string        `yaml:"url"`
 	Method  string        `yaml:"method"` // POST (default) or GET; the report is the request body either way
+	Format  string        `yaml:"format"` // html (default) | json | text
 	Timeout time.Duration `yaml:"timeout"`
+}
+
+// EmailConfig is an SMTP account the operator brings. pinproc ships no mail
+// provider: it speaks plain SMTP (net/smtp) to the server configured here.
+type EmailConfig struct {
+	Enabled      bool          `yaml:"enabled"`
+	Host         string        `yaml:"host"`
+	Port         int           `yaml:"port"`
+	Security     string        `yaml:"security"` // starttls (587, default) | tls (465) | none (local relay)
+	Username     string        `yaml:"username"`
+	Password     string        `yaml:"password,omitempty"`
+	PasswordFile string        `yaml:"password_file,omitempty"`
+	From         string        `yaml:"from"`
+	To           []string      `yaml:"to"`
+	Timeout      time.Duration `yaml:"timeout"`
+	AttachReport bool          `yaml:"attach_report"` // attach the full HTML page to each email
+}
+
+// AlertsConfig controls automatic delivery of captured incidents.
+type AlertsConfig struct {
+	// Cooldown is the minimum gap between two automatic alerts for the same
+	// resource on the same channel, so a long incident is reported once, not on
+	// every capture. Manual sends (pinproc alert / report) ignore it.
+	Cooldown time.Duration `yaml:"cooldown"`
 }
 
 type Config struct {
@@ -42,9 +67,13 @@ type Config struct {
 	Narrator NarratorConfig `yaml:"narrator"`
 	Source   SourceConfig   `yaml:"source"`
 	Report   struct {
-		MaxFindings int `yaml:"max_findings"`
+		MaxFindings int    `yaml:"max_findings"`
+		Timezone    string `yaml:"timezone"` // UTC (default), IST, an IANA name, or +05:30
+		Tag         string `yaml:"tag"`      // optional label in report headers, e.g. "production"
 	} `yaml:"report"`
 	Callback CallbackConfig `yaml:"callback"`
+	Email    EmailConfig    `yaml:"email"`
+	Alerts   AlertsConfig   `yaml:"alerts"`
 	Monitor  monitor.Config `yaml:"monitor"`
 }
 
@@ -159,9 +188,28 @@ func defaults() Config {
 	cfg.Narrator.Enabled = true
 	cfg.Source.ReadTimeout = 2 * time.Second
 	cfg.Report.MaxFindings = 5
+	cfg.Report.Timezone = "UTC"
 	cfg.Callback.Method = "POST"
+	cfg.Callback.Format = "html"
 	cfg.Callback.Timeout = 5 * time.Second
+	cfg.Email.Port = 587
+	cfg.Email.Security = "starttls"
+	cfg.Email.Timeout = 15 * time.Second
+	cfg.Email.AttachReport = true
+	cfg.Alerts.Cooldown = 30 * time.Minute
 	return cfg
+}
+
+// EmailPassword returns the SMTP password, from password_file when set.
+func (e EmailConfig) EmailPassword() (string, error) {
+	if e.PasswordFile != "" {
+		b, err := os.ReadFile(e.PasswordFile)
+		if err != nil {
+			return "", fmt.Errorf("email.password_file: %w", err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return e.Password, nil
 }
 
 func normalize(cfg *Config) {

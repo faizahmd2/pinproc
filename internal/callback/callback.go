@@ -1,6 +1,7 @@
 package callback
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -13,6 +14,12 @@ import (
 // body, to a single configured URL using the given HTTP method (POST or GET). This
 // is the only traffic pinproc ever sends. Delivery is best-effort and bounded.
 func Send(ctx context.Context, method, url string, timeout time.Duration, report string) error {
+	return SendBody(ctx, method, url, timeout, "text/plain; charset=utf-8", []byte(report))
+}
+
+// SendBody delivers one rendered report with the given content type (text/html,
+// application/json or text/plain).
+func SendBody(ctx context.Context, method, url string, timeout time.Duration, contentType string, body []byte) error {
 	if strings.TrimSpace(url) == "" {
 		return fmt.Errorf("callback URL is empty")
 	}
@@ -28,11 +35,11 @@ func Send(ctx context.Context, method, url string, timeout time.Duration, report
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, method, url, strings.NewReader(report))
+	req, err := http.NewRequestWithContext(reqCtx, method, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create callback request: %w", err)
 	}
-	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "pinproc")
 
 	client := &http.Client{Timeout: timeout}

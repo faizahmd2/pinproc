@@ -592,3 +592,10 @@ func isPublicAddress(ip net.IP) bool {
 	}
 	return true
 }
+
+// RedactCmdline masks secret values in a command line (exported for collectors
+// outside this package that show command lines to people).
+func RedactCmdline(cmd []string) []string { return redactCmdline(cmd) }
+
+// InterfaceIPs returns the public and primary addresses bound to local interfaces.
+func InterfaceIPs() (public, primary string) { return interfaceIPs() }

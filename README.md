@@ -7,7 +7,7 @@
 
 pinproc treats the Linux host as the system boundary. It watches CPU, memory, disk I/O and network by reading kernel pressure/utilization on a cheap adaptive timer, and when a resource crosses a threshold it captures the incident and attributes it to the **service** responsible — with the component processes, a build-up timeline, and an application-level next step.
 
-Collection is native and read-only. There is **no socket, no API and no agent to call**: pinproc triggers itself. By default nothing leaves the machine; the only optional egress is a single plain-text report POSTed to a URL you configure.
+Collection is native and read-only. There is **no socket, no API and no agent to call**: pinproc triggers itself. By default nothing leaves the machine; the only optional egress is the alert/report you choose to send to your callback URL or your own SMTP server.
 
 ## Install
 
@@ -43,32 +43,50 @@ systemctl status pinproc --no-pager
 
 ## Usage
 
-pinproc runs as a systemd service that watches the host and captures incidents on
-its own. To read reports:
-
 ```bash
-pinproc report          # run an investigation now and print it
-pinproc report --last   # print the service's last captured incident
-sudo pinproc doctor     # read-only self-check — if green, captures won't fail
+pinproc                       # live, top-like view of the machine (q to quit)
+pinproc --once                # print one snapshot and exit (also used when piped)
+sudo pinproc report           # detailed report → report.html + report.json, sent to your callback/email
+sudo pinproc alert callback   # send a pressure alert now (the service does this by itself)
+sudo pinproc alert email
+sudo pinproc doctor           # read-only self-check — if green, captures won't fail
+sudo pinproc --upgrade        # upgrade to the latest release (APT installs)
 ```
 
-Reports read top-down: a one-line verdict, the **Cause** (service + components +
-action), how the incident **built up**, and the current machine context.
+Every output is rendered from one JSON document (`alert.json` / `report.json` in
+`/var/lib/pinproc`), so the terminal view, the HTML pages, the email and the plain
+text always agree. `pinproc render <file.json> --as html|email|text` re-renders a
+saved document, for example in another timezone.
+
+**Alerts** (captured by the service): a severity banner naming the exact kernel
+signal and threshold, CPU / memory / disk / network pillars, the cause service and
+how the incident built up, block-device and NIC queues, and the top services with
+their binary, command line, cgroup, cgroup PSI, OOM score and disk I/O.
+
+**Detailed report** (`pinproc report`): hardware baseline, then zero-sum accounting
+— RAM split into applications (per service), shared memory, file cache, kernel and
+free so the rows add up to the machine's physical RAM; CPU time split into
+applications, kernel, waiting and idle across all cores; and one card per disk
+splitting its full size into used-per-mount (with the largest directories), free,
+reserved/metadata, swap and unpartitioned space.
 
 ## Configuration
 
 ```bash
-sudo pinproc config show        # show the managed config
-sudo pinproc config validate    # validate it
+sudo pinproc config show                  # effective config (secrets masked)
+sudo pinproc config callback --url https://example.com/pinproc [--format html|json|text] [--test]
+sudo pinproc config email                 # interactive SMTP setup; --test sends a test mail
+sudo pinproc config timezone IST          # default UTC
+sudo pinproc config cooldown 30m          # min gap between automatic alerts per resource
+sudo pinproc config tag production        # label in report headers
 ```
 
-Send each captured report (as plain text) to one URL — the only traffic pinproc
-ever sends:
-
-```bash
-sudo pinproc setup callback --url https://example.com/pinproc
-sudo pinproc setup callback --disable
-```
+Delivery is the last step and never blocks the watcher: the service saves the
+alert, then sends it in the background with bounded timeouts. The only outbound
+traffic pinproc ever makes is to the callback URL and SMTP server you configure;
+with neither set, nothing leaves the machine. Email uses your own SMTP account
+(Gmail/Workspace app password, SES, Postmark, Mailgun, a local relay…); pinproc
+ships no mail provider.
 
 Tune when an incident is captured by editing the optional `monitor:` section of
 `/etc/pinproc/config.yaml` (see `docs/testing.md`), then restart the service.

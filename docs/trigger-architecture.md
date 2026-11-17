@@ -24,7 +24,7 @@ pinproc is three parts; we are replacing only the first:
 2. **Collect + attribute** — the existing `internal/engine` (owner attribution).
 3. **Deliver** — local write always; optional single push to a configured sink.
 
-On-demand stays available as `pinproc report`, which runs an investigation
+On-demand stays available as `pinproc report` (detailed HTML/JSON report), which runs an investigation
 **in-process** (no socket, no network).
 
 ## Core concept: utilization ≠ pressure
