@@ -494,19 +494,23 @@ func causeValue(v float64, unit string) string {
 
 func specs(s *inventory.Snapshot) []spec {
 	h := s.Host
-	osLabel := "OS"
-	if h.OS != "" {
-		osLabel = "OS (" + h.OS + ")"
+	osName := h.OS
+	if osName == "" {
+		osName = "Linux"
 	}
+	osSub := strings.Join(nonEmptyStr(prefix("kernel ", h.Kernel), h.Arch), " · ")
 	cpuSub := h.CPUModel
 	if h.CPUMHz > 0 {
 		cpuSub = strings.TrimSpace(fmt.Sprintf("%s @ %.2f GHz", h.CPUModel, h.CPUMHz/1000))
 	}
-	out := []spec{{
-		Label: osLabel,
-		Vals:  []string{fmt.Sprintf("CPU: %d vCPU · %.0f%%", s.CPU.Cores, s.CPU.BusyPct), "ARCH: " + h.Arch, "KERNEL: " + h.Kernel},
-		Sub:   cpuSub,
-	}}
+	if cpuSub == "" {
+		cpuSub = "/proc/cpuinfo"
+	}
+	// Every card has the same shape: one value, then a muted detail line.
+	out := []spec{
+		{Label: "OPERATING SYSTEM", Vals: []string{osName}, Sub: osSub},
+		{Label: "CPU", Vals: []string{fmt.Sprintf("%d vCPU · %.0f%% busy", s.CPU.Cores, s.CPU.BusyPct)}, Sub: cpuSub},
+	}
 	m := s.Memory
 	ram := spec{Label: "PHYSICAL RAM", Sub: fmt.Sprintf("MemTotal: %s MiB · %s available · /proc/meminfo", thousands(float64(m.TotalBytes)/(1<<20), 0), BytesU(m.AvailableBytes))}
 	if m.PhysicalBytes > 0 {
