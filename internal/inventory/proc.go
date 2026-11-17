@@ -187,7 +187,7 @@ type procRow struct {
 	pssOK  bool
 }
 
-func (c *Collector) processes(ctx context.Context, a, b *sample, secs float64) ([]Process, []Service, Tasks) {
+func (c *Collector) processes(ctx context.Context, a, b *sample, secs float64) ([]Process, []Service, Tasks, []Listener) {
 	var tasks Tasks
 	rows := make([]*procRow, 0, len(b.procs))
 	for _, p := range b.procs {
@@ -231,6 +231,7 @@ func (c *Collector) processes(ctx context.Context, a, b *sample, secs float64) (
 		s.ReadBPS += r.rd
 		s.WriteBPS += r.wr
 		s.SwapBytes += r.s.swap
+		s.Threads += r.s.threads
 		if st, ok := mainStart[r.o.key]; !ok || r.s.start < st || (r.s.start == st && r.s.pid < s.MainPID) {
 			mainStart[r.o.key] = r.s.start
 			s.MainPID = r.s.pid
@@ -310,15 +311,12 @@ func (c *Collector) processes(ctx context.Context, a, b *sample, secs float64) (
 	}
 	sort.SliceStable(procs, func(i, j int) bool { return procs[i].CPUCores > procs[j].CPUCores })
 
+	var listeners []Listener
 	if c.opt.Enrich {
 		if c.opt.TopProcs >= 0 {
 			for i := range procs {
 				c.enrich(&procs[i])
 			}
-		}
-		var listen map[uint64]int
-		if c.opt.Ports {
-			listen = listeningInodes(c.opt.Proc)
 		}
 		cgRoot := filepath.Join(c.opt.Sys, "fs/cgroup")
 		_, v2err := os.Stat(filepath.Join(cgRoot, "cgroup.controllers"))
@@ -330,14 +328,30 @@ func (c *Collector) processes(ctx context.Context, a, b *sample, secs float64) (
 			mp := c.process(rowByPID[s.MainPID], s.Name)
 			c.enrich(&mp)
 			s.Exe, s.Cmdline, s.User, s.OOMScore, s.OOMAdj = mp.Exe, mp.Cmdline, mp.User, mp.OOMScore, mp.OOMAdj
+			s.StartedAt, s.FDLimit, s.Parents = mp.StartedAt, mp.FDLimit, parents(b.procs, s.MainPID)
 			if s.Kind == "container" {
 				if n := containerName(strings.TrimPrefix(s.Key, "container:")); n != "" {
 					s.Name = n
 				}
 			}
-			s.Ports = c.ports(s.pids, listen)
 			if v2err == nil && s.CgroupPath != "" {
 				s.Cgroup = c.cgroupStats(cgRoot, s.CgroupPath, a.cgThrot[s.CgroupPath], b.cgThrot[s.CgroupPath])
+			}
+		}
+		if c.opt.Ports && ctx.Err() == nil {
+			listeners = c.workloadSockets(services, 12, c.opt.AllSockets, b.procs)
+		}
+		if c.opt.Units && ctx.Err() == nil {
+			var units []string
+			for i := 0; i < len(services) && i < 12; i++ {
+				if services[i].Kind == "systemd" && strings.HasSuffix(services[i].Unit, ".service") {
+					units = append(units, services[i].Unit)
+				}
+			}
+			if info := unitInfo(ctx, units, c.boot); info != nil {
+				for i := 0; i < len(services) && i < 12; i++ {
+					services[i].Systemd = info[services[i].Unit]
+				}
 			}
 		}
 		// Keep process rows consistent with any renamed container.
@@ -351,9 +365,8 @@ func (c *Collector) processes(ctx context.Context, a, b *sample, secs float64) (
 			}
 		}
 	}
-	_ = ctx
 	c.pssSeen = pssOK
-	return procs, services, tasks
+	return procs, services, tasks, listeners
 }
 
 // topRows picks up to n rows, alternating between the heaviest CPU, memory and
@@ -432,51 +445,6 @@ func (c *Collector) enrich(p *Process) {
 	p.OOMAdj = readInt(filepath.Join(dir, "oom_score_adj"))
 }
 
-// listeningInodes maps socket inode -> port for listening TCP sockets.
-func listeningInodes(proc string) map[uint64]int {
-	out := map[uint64]int{}
-	for _, f := range []string{"net/tcp", "net/tcp6"} {
-		rows, _ := procfs.ParseSocketTable(readFile(filepath.Join(proc, f)))
-		for _, r := range rows {
-			if r.State == "0A" && r.Inode != 0 {
-				out[r.Inode] = r.LocalPort
-			}
-		}
-	}
-	return out
-}
-
-func (c *Collector) ports(pids []int, listen map[uint64]int) []int {
-	if len(listen) == 0 {
-		return nil
-	}
-	seen := map[int]bool{}
-	var out []int
-	for i, pid := range pids {
-		if i >= 32 {
-			break
-		}
-		dir := filepath.Join(c.opt.Proc, strconv.Itoa(pid), "fd")
-		ents, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range ents {
-			l, err := os.Readlink(filepath.Join(dir, e.Name()))
-			if err != nil || !strings.HasPrefix(l, "socket:[") {
-				continue
-			}
-			ino, _ := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(l, "socket:["), "]"), 10, 64)
-			if port, ok := listen[ino]; ok && !seen[port] {
-				seen[port] = true
-				out = append(out, port)
-			}
-		}
-	}
-	sort.Ints(out)
-	return out
-}
-
 func (c *Collector) cgroupStats(root, path string, before, after [2]uint64) *CgroupStats {
 	dir := filepath.Join(root, path)
 	if _, err := os.Stat(dir); err != nil {
@@ -493,6 +461,27 @@ func (c *Collector) cgroupStats(root, path string, before, after [2]uint64) *Cgr
 		cs.IOPSISome10 = readPSI(filepath.Join(dir, "io.pressure")).SomeAvg10
 	}
 	cs.OOMKills = kvFields(readFile(filepath.Join(dir, "memory.events")))["oom_kill"]
+	cs.MemPeak = readUint(filepath.Join(dir, "memory.peak"))
+	if v := readString(filepath.Join(dir, "memory.high")); v != "max" {
+		cs.MemHigh, _ = strconv.ParseUint(v, 10, 64)
+	}
+	cs.SwapCurrent = readUint(filepath.Join(dir, "memory.swap.current"))
+	cs.CPUUsageSec = float64(kvFields(readFile(filepath.Join(dir, "cpu.stat")))["usage_usec"]) / 1e6
+	for _, line := range strings.Split(string(readFile(filepath.Join(dir, "io.stat"))), "\n") {
+		for _, f := range strings.Fields(line) {
+			if v, ok := strings.CutPrefix(f, "rbytes="); ok {
+				n, _ := strconv.ParseUint(v, 10, 64)
+				cs.IOReadTotal += n
+			} else if v, ok := strings.CutPrefix(f, "wbytes="); ok {
+				n, _ := strconv.ParseUint(v, 10, 64)
+				cs.IOWriteTotal += n
+			}
+		}
+	}
+	cs.PidsCurrent = readUint(filepath.Join(dir, "pids.current"))
+	if v := readString(filepath.Join(dir, "pids.max")); v != "max" {
+		cs.PidsMax, _ = strconv.ParseUint(v, 10, 64)
+	}
 	if periods := sub(after[0], before[0]); periods > 0 {
 		cs.ThrottledPct = pct(float64(sub(after[1], before[1])), float64(periods))
 	}

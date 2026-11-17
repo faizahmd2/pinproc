@@ -1,5 +1,5 @@
 [Unit]
-Description=pinproc Linux inspection service
+Description=pinproc read-only incident watcher
 After=local-fs.target network-online.target
 Wants=network-online.target
 
@@ -9,7 +9,7 @@ ExecStart=/usr/bin/pinproc service run
 WorkingDirectory=/
 User=pinproc
 Group=pinproc
-Restart=on-failure
+Restart=always
 RestartSec=2s
 TimeoutStopSec=30s
 KillSignal=SIGTERM
@@ -19,10 +19,28 @@ KillSignal=SIGTERM
 #   CAP_DAC_READ_SEARCH — read /proc/<pid>/{io,fd,...} and cgroup files owned by
 #                         other users (bypasses file read permission checks ONLY).
 #   CAP_SYS_PTRACE      — read /proc/<pid>/smaps for other users' processes.
-#   CAP_SYSLOG          — read /dev/kmsg to detect OOM kills.
+#   CAP_SYSLOG          — read /dev/kmsg for kernel messages (OOM kills, hung tasks,
+#                         I/O errors) in the incident window.
+# Journal excerpts are read with journalctl, which CAP_DAC_READ_SEARCH lets read
+# /var/log/journal; unit facts come from read-only `systemctl show` queries.
 # None of these grant write access; the unit is otherwise strictly confined.
 CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
 AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE CAP_SYSLOG
+
+# pinproc's job is hardest exactly when the machine is struggling, so it is
+# protected from that struggle — while staying small enough never to cause it:
+#   OOMScoreAdjust  the kernel OOM killer picks almost anything else first
+#   MemoryLow       its few MiB are the last pages reclaimed (cgroup v2)
+#   MemoryHigh/Max  and it can never grow into a problem itself
+#   CPUWeight/IOWeight  it is scheduled promptly on a saturated machine; it uses
+#                   a fraction of a percent of one core, so this costs nobody
+OOMScoreAdjust=-900
+MemoryLow=48M
+MemoryHigh=256M
+MemoryMax=384M
+CPUWeight=1000
+IOWeight=1000
+TasksMax=64
 
 ProtectSystem=strict
 ProtectHome=true
@@ -34,8 +52,8 @@ RestrictNamespaces=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-# The service never needs to gain privileges; keep this on so a child (e.g. an
-# AI provider binary) can never escalate.
+# The service never needs to gain privileges; keep this on so a child process
+# (journalctl, systemctl) can never escalate.
 NoNewPrivileges=true
 ReadWritePaths=/var/lib/pinproc
 

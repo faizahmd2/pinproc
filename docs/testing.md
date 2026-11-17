@@ -55,7 +55,7 @@ sudo sed -i '/^monitor:/,$d' /etc/pinproc/config.yaml && sudo systemctl restart 
 ## 2. How to read a report
 
 ```bash
-pinproc                         # live view; pinproc --once prints one snapshot
+pinproc                         # one structured look at the machine now; pinproc --json for the snapshot
 sudo pinproc report             # detailed report → report.html/json (paths printed), sent to enabled channels
 sudo pinproc report --no-send   # just write the files
 pinproc report --last           # show the last auto-captured incident as text (no new run)
@@ -189,18 +189,28 @@ rm -f "$HOME/f.dat"
 ## 9. Delivery to your channels (callback, email)
 
 ```bash
+# Email through your own SMTP account (guided; password prompt is hidden).
+# After saving it offers a dry run: connect, TLS, login, sender, recipients —
+# the SMTP conversation stops before DATA, so nothing is delivered.
+sudo pinproc config email
+sudo pinproc config email --test           # the same dry run, any time
+sudo pinproc alert email                   # a real alert page, now
+
 # POST each captured alert (HTML page by default; --format json|text) to any HTTP sink
 sudo pinproc config callback --url https://your-endpoint.example/pinproc --test
 sudo pinproc config callback --disable     # turn it off
 
-# Email through your own SMTP account (interactive; password prompt is hidden)
-sudo pinproc config email
-sudo pinproc config email --test
-sudo pinproc alert email                   # a real alert page, now
+pinproc config list                        # everything in effect, in plain words
+sudo pinproc config set alerts.cooldown 1h # change any single setting
 
 sudo pinproc config cooldown 30m           # one automatic alert per resource per 30m
 sudo pinproc config timezone IST           # default UTC
 ```
+
+Alerts carry the journal and kernel lines from the incident window. To see that
+part work, write an error from a unit while it is under load, e.g.
+`systemd-run --unit=pinproc-noise sh -c 'logger -p err "db timeout"; stress-ng --cpu 0 -t 90s'`
+— the alert's "Logs from the incident window" shows the line under that unit.
 
 Automatic alerts are sent in the background after the capture is saved, at most
 once per resource per cooldown (`/var/lib/pinproc/delivery-state.json` records the

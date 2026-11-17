@@ -1,4 +1,4 @@
-{{template "head" (printf "%s · Linux Node Inventory" .S.Host.Hostname)}}
+{{template "head" (printf "%s · machine report" .S.Host.Hostname)}}
 <body>
 <div class="container">
   <div class="header rule">
@@ -9,39 +9,16 @@
     </div>
   </div>
 
-  <div class="spec-grid">
-{{range .Specs}}    <div class="spec-box">
-      <div class="spec-label">{{.Label}}</div>
-      {{range .Vals}}<div class="spec-val">{{.}}</div>{{end}}
-      {{if .Sub}}<div class="spec-sub">{{.Sub}}</div>{{end}}
-    </div>
-{{end}}  </div>
-
-  {{template "findings" .}}
+  {{template "specs" .}}
+  {{template "pillars" .}}
+  {{template "services" .}}
+  {{template "listeners" .}}
   {{template "breakdown" .Mem}}
   {{template "breakdown" .CPU}}
   {{range .Disks}}{{template "breakdown" .}}{{end}}
-
-  {{if .NICs}}<div class="card">
-    <div class="box-head"><span class="box-title">Network Interfaces &amp; TCP</span><span class="cmd">ip -s link &amp;&amp; ss -s</span></div>
-    <div class="scroll"><table>
-      <thead><tr><th>Interface</th><th>Address</th><th>Link</th><th class="num">RX</th><th class="num">TX</th><th class="num">Drops rx/tx</th></tr></thead>
-      <tbody>{{range .NICs}}<tr><td>{{.Name}} <span class="c-muted">{{.State}}</span></td><td>{{.Addr}}</td><td>{{.Link}}</td><td class="num">{{.Rx}}</td><td class="num">{{.Tx}}</td><td class="num">{{.Drops}}</td></tr>{{end}}</tbody>
-    </table></div>
-    <div class="left" style="margin:8px 0 0">{{.NetLine}}</div>
-  </div>{{end}}
-
-  {{template "services" .}}
-
-  {{if .Procs}}<div class="card">
-    <div class="box-head"><span class="box-title">Top Processes</span><span class="cmd">htop (program path) · iotop · ls /proc/PID/fd</span></div>
-    <div class="scroll"><table>
-      <thead><tr><th>PID</th><th>User</th><th>Service</th><th class="num">CPU</th><th class="num">Mem</th><th class="num">Read</th><th class="num">Write</th><th class="num">FDs</th><th>Command</th></tr></thead>
-      <tbody>{{range .Procs}}<tr><td>{{.PID}}</td><td>{{.User}}</td><td>{{.Service}}</td><td class="num">{{.CPU}}</td><td class="num">{{.Mem}}</td><td class="num">{{.Read}}</td><td class="num">{{.Write}}</td><td class="num">{{.FDs}}</td><td style="word-break:break-all">{{.Cmd}}{{if .Gone}} <span class="gone">(binary replaced — restart to load it)</span>{{end}}</td></tr>{{end}}</tbody>
-    </table></div>
-    <div class="left" style="margin:8px 0 0">tasks: {{.S.Tasks.Total}} · running {{.S.Tasks.Running}} · blocked (D) {{.S.Tasks.Blocked}} · zombie {{.S.Tasks.Zombie}} · threads {{.S.Tasks.Threads}}</div>
-  </div>{{end}}
-
+  {{template "nics" .}}
+  {{template "checks" .}}
+  {{template "procs" .}}
   {{template "notes" .}}
 </div>
 {{template "script"}}

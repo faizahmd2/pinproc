@@ -48,6 +48,9 @@ type EmailConfig struct {
 	To           []string      `yaml:"to"`
 	Timeout      time.Duration `yaml:"timeout"`
 	AttachReport bool          `yaml:"attach_report"` // attach the full HTML page to each email
+	// Subject overrides the alert subject. Placeholders: {host} {ip} {tag}
+	// {severity} {dimension} {cause} {headline}. Empty = the built-in subject.
+	Subject string `yaml:"subject,omitempty"`
 }
 
 // AlertsConfig controls automatic delivery of captured incidents.

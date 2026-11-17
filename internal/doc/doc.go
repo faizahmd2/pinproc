@@ -15,6 +15,7 @@ import (
 
 	"github.com/faizahmd2/pinproc/internal/contract"
 	"github.com/faizahmd2/pinproc/internal/inventory"
+	"github.com/faizahmd2/pinproc/internal/journal"
 	"github.com/faizahmd2/pinproc/internal/report"
 )
 
@@ -52,17 +53,23 @@ type Document struct {
 	Tag           string              `json:"tag,omitempty"`
 	Snapshot      *inventory.Snapshot `json:"snapshot"`
 	Incident      *contract.Incident  `json:"incident,omitempty"`
-	Findings      []Finding           `json:"findings,omitempty"`
+	Findings      []Finding           `json:"findings,omitempty"` // alerts only, and only when they add something
+	Logs          *journal.Excerpt    `json:"logs,omitempty"`     // journal + kernel lines from the incident window
 	Notes         []string            `json:"notes,omitempty"`
 	Text          string              `json:"text,omitempty"` // the classic plain-text report
 }
 
 // Finding is one supporting conclusion and what to do about it.
 type Finding struct {
-	Statement string `json:"statement"`
-	Action    string `json:"action,omitempty"`
-	Log       string `json:"log,omitempty"`
+	Statement  string             `json:"statement"`
+	Action     string             `json:"action,omitempty"`
+	Log        string             `json:"log,omitempty"`
+	Dimension  contract.Dimension `json:"dimension,omitempty"`
+	Confidence float64            `json:"confidence,omitempty"`
 }
+
+// maxFindings caps the "also noticed" list: a short list is read, a long one is not.
+const maxFindings = 4
 
 // New assembles a document from an engine investigation (cause, findings, text)
 // and an inventory snapshot (the machine picture). Either may be nil.
@@ -82,7 +89,9 @@ func New(kind Kind, inv *contract.Investigation, snap *inventory.Snapshot) *Docu
 	}
 	d.Incident = inv.Incident
 	d.Headline = report.Verdict(inv)
-	d.Text = report.RenderMarkdown(inv)
+	if kind == KindAlert {
+		d.Text = report.RenderMarkdown(inv) // the classic report.md; a report renders its own text
+	}
 	caused := contract.Dimension("")
 	if inv.Incident != nil {
 		d.Dimension = inv.Incident.Dimension
@@ -90,15 +99,8 @@ func New(kind Kind, inv *contract.Investigation, snap *inventory.Snapshot) *Docu
 			caused = inv.Incident.Cause.Dimension
 		}
 	}
-	for _, h := range inv.Hypotheses {
-		if caused != "" && h.Dimension == caused && strings.HasPrefix(h.Source, "owner:") {
-			continue // already stated as the cause
-		}
-		f := Finding{Statement: h.Statement, Action: h.Action}
-		if h.LogContext != nil {
-			f.Log = fmt.Sprintf("%s — %q", h.LogContext.Path, h.LogContext.Line)
-		}
-		d.Findings = append(d.Findings, f)
+	if kind == KindAlert {
+		d.Findings = findings(inv.Hypotheses, d.Dimension, caused)
 	}
 	for _, l := range inv.Limitations {
 		d.Notes = append(d.Notes, l)
@@ -111,6 +113,36 @@ func New(kind Kind, inv *contract.Investigation, snap *inventory.Snapshot) *Docu
 		}
 	}
 	return d
+}
+
+// findings keeps only what adds to the alert: confident conclusions about the
+// incident's own resource (or very confident ones about another), never a
+// restatement of the cause already shown. A report has none — it describes the
+// machine; it does not diagnose it.
+func findings(hyps []contract.Hypothesis, dim, caused contract.Dimension) []Finding {
+	var out []Finding
+	for _, h := range hyps {
+		if caused != "" && h.Dimension == caused && strings.HasPrefix(h.Source, "owner:") {
+			continue // already stated as the cause
+		}
+		strong := h.Confidence >= 0.5 || h.LogContext != nil || h.Grade == contract.GradeCorrelated
+		sameResource := dim == "" || h.Dimension == dim || (dim == contract.DimensionIO && h.Dimension == contract.DimensionFilesystem)
+		// Another resource's finding only when it is a very confident observation,
+		// never an ownership/space breakdown that belongs to that resource's alert.
+		onTopic := sameResource || (h.Confidence >= 0.75 && !strings.HasPrefix(h.Source, "owner:"))
+		if !strong || !onTopic {
+			continue
+		}
+		f := Finding{Statement: h.Statement, Action: h.Action, Dimension: h.Dimension, Confidence: h.Confidence}
+		if h.LogContext != nil {
+			f.Log = fmt.Sprintf("%s — %q", h.LogContext.Path, h.LogContext.Line)
+		}
+		out = append(out, f)
+		if len(out) == maxFindings {
+			break
+		}
+	}
+	return out
 }
 
 // Save writes the document atomically as dir/name.json and returns the path.

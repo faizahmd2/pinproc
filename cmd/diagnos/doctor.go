@@ -138,16 +138,16 @@ func runDoctor() []checkResult {
 	// Delivery: where alerts go, and the cooldown between them.
 	if cfg, err := config.Load(cfgPath); err == nil {
 		switch {
+		case cfg.Email.Enabled:
+			add("alert email", statusOK, fmt.Sprintf("%s:%d %s → %s (dry-run: sudo pinproc config email --test)", cfg.Email.Host, cfg.Email.Port, cfg.Email.Security, strings.Join(cfg.Email.To, ", ")))
+		default:
+			add("alert email", statusOK, "off — sudo pinproc config email")
+		}
+		switch {
 		case cfg.Callback.Enabled:
 			add("alert callback", statusOK, cfg.Callback.Method+" "+cfg.Callback.URL+" ("+cfg.Callback.Format+")")
 		default:
 			add("alert callback", statusOK, "off — sudo pinproc config callback --url …")
-		}
-		switch {
-		case cfg.Email.Enabled:
-			add("alert email", statusOK, fmt.Sprintf("%s:%d %s → %s", cfg.Email.Host, cfg.Email.Port, cfg.Email.Security, strings.Join(cfg.Email.To, ", ")))
-		default:
-			add("alert email", statusOK, "off — sudo pinproc config email")
 		}
 		add("alert cooldown / timezone", statusOK, cfg.Alerts.Cooldown.String()+" per resource · times in "+cfg.Report.Timezone)
 	}

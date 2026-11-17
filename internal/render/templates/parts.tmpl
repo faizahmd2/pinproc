@@ -36,9 +36,20 @@ function toggleAll(sel,btn){var cs=document.querySelectorAll(sel),open=Array.pro
 </div>{{end}}{{end}}
 
 {{define "findings"}}{{if .D.Findings}}<div class="box">
-  <div class="box-head"><span class="box-title">What pinproc found</span><span class="cmd">{{len .D.Findings}} finding(s)</span></div>
+  <div class="box-head"><span class="box-title">Also noticed</span><span class="cmd">{{len .D.Findings}} supporting finding{{if gt (len .D.Findings) 1}}s{{end}}</span></div>
   <ul class="findings">{{range .D.Findings}}<li>{{.Statement}}{{if .Action}}<span class="act">→ {{.Action}}</span>{{end}}{{if .Log}}<span class="logl">log: {{.Log}}</span>{{end}}</li>{{end}}</ul>
 </div>{{end}}{{end}}
+
+{{define "logs"}}{{if .Logs}}<div class="box">
+  <div class="box-head"><span class="box-title">Logs from the incident window</span><span class="cmd">journal + kernel ring buffer · warnings &amp; errors, repeats collapsed</span></div>
+{{range .Logs}}  <div class="log-sec">
+    <div class="log-head"><span class="log-title">{{.Title}}</span><span class="cmd">{{.Cmd}}</span></div>
+    {{if .Note}}<div class="left" style="margin:0 0 4px">{{.Note}}</div>{{end}}
+    {{if .Lines}}<div class="scroll"><table>
+      <tbody>{{range .Lines}}<tr><td style="white-space:nowrap">{{.At}}</td><td><span class="prio c-{{.PrioClass}}">{{.Prio}}</span></td><td style="white-space:nowrap" class="c-muted">{{.Who}}</td><td class="msg">{{.Msg}}{{if .Count}}<span class="cnt">×{{.Count}}</span>{{end}}</td></tr>{{end}}</tbody>
+    </table></div>{{end}}
+  </div>
+{{end}}</div>{{end}}{{end}}
 
 {{define "timeline"}}{{if .Timeline}}<div class="box">
   <div class="box-head"><span class="box-title">How It Built Up</span><span class="cmd">pre-capture samples</span></div>
@@ -59,19 +70,64 @@ function toggleAll(sel,btn){var cs=document.querySelectorAll(sel),open=Array.pro
 
 {{define "services"}}{{if .Services}}<div class="box">
   <div class="box-head">
-    <span class="box-title">{{if eq .D.Kind "alert"}}Top Offending Services &amp; Process Trees{{else}}Services &amp; Owners{{end}}</span>
-    <div><span class="cmd" style="margin-right:6px">systemd-cgtop -n 1</span><button class="btn-toggle" onclick="toggleAll('details.svc-card',this)">Expand All</button></div>
+    <span class="box-title">{{if eq .D.Kind "alert"}}Workloads under pressure{{else}}Workloads — what runs here and how it lives{{end}}</span>
+    <div><span class="cmd" style="margin-right:6px">systemd-cgtop -n 1 · ss -tnp</span><button class="btn-toggle" onclick="toggleAll('details.svc-card',this)">Expand All</button></div>
   </div>
-{{range .Services}}  <details class="svc-card{{if .Cause}} cause{{end}}">
+{{range .Services}}  <details class="svc-card{{if .Cause}} cause{{end}}"{{if .Open}} open{{end}}>
     <summary class="svc-sum">
       <span class="svc-name">{{.Rank}}. {{.Name}} <span{{if .Class}} class="c-{{.Class}}"{{end}}>[{{.Badge}}]</span>{{if .Cause}} <span class="badge">CAUSE</span>{{end}}</span>
       <span class="svc-metrics">{{.Metrics}}</span>
     </summary>
-    <div class="svc-body">{{range .KV}}
-      <div class="kv-row"><span>{{.K}}</span><span class="kv-val {{.Class}}">{{.V}}</span></div>{{end}}
+    <div class="svc-body">{{range .Groups}}
+      <div class="grp"><div class="grp-title">{{.Title}}</div>{{range .Rows}}
+        <div class="kv-row"><span>{{.K}}</span><span class="kv-val {{.Class}}">{{.V}}</span></div>{{end}}
+      </div>{{end}}
+      {{if .Cmds}}<div class="cmds"><div class="grp-title">Verify</div>{{range .Cmds}}<code>{{.}}</code>{{end}}</div>{{end}}
     </div>
   </details>
 {{end}}</div>{{end}}{{end}}
+
+{{define "listeners"}}{{if .Listeners}}<div class="card">
+  <div class="box-head"><span class="box-title">Exposed &amp; local ports</span><span class="cmd">ss -tulpn</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Proto</th><th>Address</th><th class="num">Port</th><th>Service</th><th class="num">PID</th><th class="num">Clients</th><th>Reachable from</th></tr></thead>
+    <tbody>{{range .Listeners}}<tr><td>{{.Proto}}</td><td>{{.Addr}}</td><td class="num">{{.Port}}</td><td>{{.Service}}</td><td class="num">{{.PID}}</td><td class="num">{{.Clients}}</td><td class="c-{{.ScopeClass}}">{{.Scope}}</td></tr>{{end}}</tbody>
+  </table></div>
+</div>{{end}}{{end}}
+
+{{define "checks"}}{{if .Checks}}<div class="card chk">
+  <div class="box-head"><span class="box-title">Host checks</span><span class="cmd">{{.ChecksOK}} ok{{if .ChecksBad}} · {{.ChecksBad}} need attention{{end}}</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th></th><th>Check</th><th>State</th><th>Verify</th></tr></thead>
+    <tbody>{{range .Checks}}<tr><td class="ico c-{{if eq .State "warn"}}warn{{else if eq .State "ok"}}ok{{else}}muted{{end}}">{{.Icon}}</td><td class="label">{{.Name}}<span class="hint">{{.Area}}</span></td><td>{{.Value}}{{if .Hint}}<span class="hint">{{.Hint}}</span>{{end}}</td><td class="vcmd">{{.Cmd}}</td></tr>{{end}}</tbody>
+  </table></div>
+</div>{{end}}{{end}}
+
+{{define "nics"}}{{if .NICs}}<div class="card">
+  <div class="box-head"><span class="box-title">Network interfaces &amp; TCP</span><span class="cmd">ip -s link &amp;&amp; ss -s</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Interface</th><th>Address</th><th>Link</th><th class="num">RX</th><th class="num">TX</th><th class="num">Drops rx/tx</th></tr></thead>
+    <tbody>{{range .NICs}}<tr><td>{{.Name}} <span class="c-muted">{{.State}}</span></td><td>{{.Addr}}</td><td>{{.Link}}</td><td class="num">{{.Rx}}</td><td class="num">{{.Tx}}</td><td class="num">{{.Drops}}</td></tr>{{end}}</tbody>
+  </table></div>
+  <div class="left" style="margin:8px 0 0">{{.NetLine}}</div>
+</div>{{end}}{{end}}
+
+{{define "procs"}}{{if .Procs}}<div class="card">
+  <div class="box-head"><span class="box-title">Top processes</span><span class="cmd">ps -eo pid,user,stat,nlwp,pcpu,rss,args · ls /proc/PID/fd</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>PID</th><th>User</th><th>Service</th><th>State</th><th class="num">Thr</th><th class="num">CPU</th><th class="num">Mem</th><th class="num">Read</th><th class="num">Write</th><th class="num">FDs</th><th>Up</th><th>Command</th></tr></thead>
+    <tbody>{{range .Procs}}<tr><td>{{.PID}}</td><td>{{.User}}</td><td>{{.Service}}</td><td>{{.State}}</td><td class="num">{{.Threads}}</td><td class="num">{{.CPU}}</td><td class="num">{{.Mem}}</td><td class="num">{{.Read}}</td><td class="num">{{.Write}}</td><td class="num">{{.FDs}}</td><td>{{.Up}}</td><td style="word-break:break-all">{{.Cmd}}{{if .Gone}} <span class="gone">(binary replaced — restart to load it)</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div>
+  <div class="left" style="margin:8px 0 0">tasks: {{.S.Tasks.Total}} · running {{.S.Tasks.Running}} · blocked (D) {{.S.Tasks.Blocked}} · zombie {{.S.Tasks.Zombie}} · threads {{.S.Tasks.Threads}}</div>
+</div>{{end}}{{end}}
+
+{{define "specs"}}<div class="spec-grid">
+{{range .Specs}}  <div class="spec-box">
+    <div class="spec-label">{{.Label}}</div>
+    {{range .Vals}}<div class="spec-val">{{.}}</div>{{end}}
+    {{if .Sub}}<div class="spec-sub">{{.Sub}}</div>{{end}}
+  </div>
+{{end}}</div>{{end}}
 
 {{define "breakdown"}}<div class="card">
   <div class="box-head"><span class="box-title">{{.Title}}</span><span class="cmd">{{.Cmd}}</span></div>

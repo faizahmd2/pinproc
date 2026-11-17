@@ -1,7 +1,8 @@
 # pinproc managed configuration template.
 # Installed systems keep active configuration in /etc/pinproc/config.yaml.
 # pinproc watches the host and captures incidents by itself (no socket, no API).
-# Change settings with `sudo pinproc config <callback|email|timezone|cooldown|tag>`
+# See what is in effect with `pinproc config list`; change it with
+# `sudo pinproc config <email|callback|set|timezone|cooldown|tag>`
 # or edit this file and run `sudo systemctl restart pinproc`.
 
 version: 1
@@ -24,17 +25,8 @@ report:
   # Optional label shown in report headers, e.g. production
   tag: ""
 
-# Optional: send each captured alert (and `pinproc report`) to one URL.
-# format: html (the self-contained page, default) | json (the full document) | text
-callback:
-  enabled: false
-  url: ""
-  method: POST
-  format: html
-  timeout: 5s
-
-# Optional: email alerts through YOUR SMTP server (pinproc ships no provider).
-# Set up interactively with `sudo pinproc config email`; test with --test.
+# Optional: email alerts through YOUR SMTP account (pinproc ships no provider).
+# Set up interactively with `sudo pinproc config email`; dry-run it with --test.
 # security: starttls (587, default) | tls (465) | none (local relay only)
 email:
   enabled: false
@@ -48,6 +40,18 @@ email:
   to: []
   timeout: 15s
   attach_report: true
+  # Optional alert subject. Placeholders: {host} {ip} {tag} {severity}
+  # {dimension} {cause} {headline}. Empty = the built-in subject.
+  # subject: "[{tag}] {severity} {dimension} on {host}: {cause}"
+
+# Optional: also POST each captured alert (and `pinproc report`) to one URL.
+# format: html (the self-contained page, default) | json (the full document) | text
+callback:
+  enabled: false
+  url: ""
+  method: POST
+  format: html
+  timeout: 5s
 
 # Automatic alerts are sent at most once per resource per cooldown (manual
 # `pinproc alert` / `pinproc report` sends ignore it).

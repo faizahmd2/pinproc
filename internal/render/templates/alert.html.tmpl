@@ -2,16 +2,22 @@
 <body>
 <div class="container">
   <div class="header">
-    <div class="meta">VM: {{if .HostIP}}{{.HostIP}} ({{.S.Host.Hostname}}){{else}}{{.S.Host.Hostname}}{{end}}{{if .S.Host.OS}} · {{.S.Host.OS}}{{end}}{{if .S.Host.Kernel}} · {{.S.Host.Kernel}}{{end}}</div>
+    <div class="meta">VM: {{if .HostIP}}{{.HostIP}} ({{.S.Host.Hostname}}){{else}}{{.S.Host.Hostname}}{{end}}{{if .D.Tag}} · {{.D.Tag}}{{end}}{{if .S.Host.OS}} · {{.S.Host.OS}}{{end}}{{if .S.Host.Kernel}} · {{.S.Host.Kernel}}{{end}}</div>
     <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme">🌓</button>
   </div>
   {{template "banner" .}}
   {{template "pillars" .}}
   {{template "cause" .}}
   {{template "timeline" .}}
+  {{template "logs" .}}
   {{template "findings" .}}
-  {{template "devices" .}}
   {{template "services" .}}
+  {{if .ShowMem}}{{template "breakdown" .Mem}}{{end}}
+  {{if .ShowCPU}}{{template "breakdown" .CPU}}{{end}}
+  {{if .ShowDisks}}{{range .Disks}}{{template "breakdown" .}}{{end}}{{end}}
+  {{if .ShowNet}}{{template "nics" .}}{{template "listeners" .}}{{end}}
+  {{template "devices" .}}
+  {{template "specs" .}}
   {{template "notes" .}}
 </div>
 {{template "script"}}

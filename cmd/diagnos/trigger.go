@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/faizahmd2/pinproc/internal/aggregate"
 	"github.com/faizahmd2/pinproc/internal/config"
@@ -39,10 +40,15 @@ type captureSink struct {
 	dispatch  *deliver.Dispatcher
 }
 
-func (s *captureSink) Capture(ctx context.Context, c monitor.Capture) {
+func (s *captureSink) Capture(parent context.Context, c monitor.Capture) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// The machine is in trouble right now, so every stage is bounded: whatever
+	// finished inside the deadline becomes the alert. Nothing here may stall the
+	// watcher for long or leave the incident unreported.
+	ctx, cancel := context.WithTimeout(parent, captureDeadline)
+	defer cancel()
 	req := engine.Request{
 		ID:        fmt.Sprintf("inc-%d", c.FiredAt.UnixNano()),
 		Host:      localHostName(),
@@ -53,17 +59,31 @@ func (s *captureSink) Capture(ctx context.Context, c monitor.Capture) {
 		inv.Incident = toIncident(c)
 		inv.Incident.Cause = buildCause(ctx, src, inv, c.Dimension)
 	})
-	if err != nil {
-		logger.Warn("capture investigation failed", "error", err)
-		return
+	degraded := ""
+	if err != nil || inv == nil {
+		// The attribution engine did not finish; still report what is known: the
+		// timeline the watcher recorded and the machine picture.
+		logger.Warn("capture: engine did not finish, sending a degraded alert", "error", err)
+		inv = &contract.Investigation{ID: req.ID, Trigger: req.Trigger, Host: req.Host}
+		degraded = fmt.Sprintf("attribution engine did not finish (%v) — cause taken from the machine snapshot", err)
+	}
+	if inv.Incident == nil {
+		inv.Incident = toIncident(c)
+	}
+	if inv.Incident.Cause == nil {
+		inv.Incident.Cause = snapshotCause(snap, c.Dimension)
 	}
 	d := buildDocument(s.cfg, doc.KindAlert, inv, snap)
 	d.TriggerDetail = triggerDetail(s.cfg.Monitor, c)
+	if degraded != "" {
+		d.Notes = append(d.Notes, degraded)
+	}
+	attachLogs(parent, d, c.StartedAt.Add(-2*time.Minute))
 	if _, _, err := writeOutputs(s.cfg, s.reportDir, "alert", d); err != nil {
 		logger.Error("capture: report write failed", "error", err)
 		return
 	}
-	logger.Info("incident captured", "dimension", c.Dimension, "reason", c.Reason, "dots", len(c.Dots))
+	logger.Info("incident captured", "dimension", c.Dimension, "reason", c.Reason, "dots", len(c.Dots), "took", time.Since(c.FiredAt).Round(time.Millisecond))
 	if s.dispatch != nil {
 		s.dispatch.Fire(d) // async, cooldown-gated; never blocks the monitor
 	}

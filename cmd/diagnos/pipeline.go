@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,12 +19,16 @@ import (
 	"github.com/faizahmd2/pinproc/internal/engine"
 	"github.com/faizahmd2/pinproc/internal/identity"
 	"github.com/faizahmd2/pinproc/internal/inventory"
+	"github.com/faizahmd2/pinproc/internal/journal"
 	"github.com/faizahmd2/pinproc/internal/monitor"
 	"github.com/faizahmd2/pinproc/internal/render"
 	"github.com/faizahmd2/pinproc/internal/report"
 	"github.com/faizahmd2/pinproc/internal/rules"
 	"github.com/faizahmd2/pinproc/internal/source"
 )
+
+// captureDeadline bounds an automatic capture end to end (engine + inventory).
+const captureDeadline = 30 * time.Second
 
 // The pipeline is: collect (engine + inventory, in parallel) -> Document (JSON)
 // -> save -> deliver. Everything after the Document is a pure function of it, so
@@ -167,4 +172,92 @@ func limit(v float64, unit string) string {
 		return ""
 	}
 	return strings.ReplaceAll(fmt.Sprintf(" (capture ≥ %.0f%s)", v, unit), "%", "%%")
+}
+
+// snapshotCause names the heaviest workload for dim from the inventory alone. It
+// is the fallback when the engine could not attribute the incident.
+func snapshotCause(snap *inventory.Snapshot, dim contract.Dimension) *contract.ServiceCause {
+	if snap == nil {
+		return nil
+	}
+	var best *inventory.Service
+	val := func(s *inventory.Service) float64 {
+		switch dim {
+		case contract.DimensionMemory:
+			return float64(s.MemBytes)
+		case contract.DimensionIO, contract.DimensionFilesystem:
+			return s.ReadBPS + s.WriteBPS
+		case contract.DimensionNetwork:
+			n := 0
+			for _, l := range s.Listen {
+				n += l.Clients
+			}
+			for _, p := range s.Peers {
+				n += p.Conns
+			}
+			return float64(n)
+		}
+		return s.CPUCores
+	}
+	for i := range snap.Services {
+		s := &snap.Services[i]
+		if s.Kind == "kernel" {
+			continue
+		}
+		if best == nil || val(s) > val(best) {
+			best = s
+		}
+	}
+	if best == nil || val(best) <= 0 {
+		return nil
+	}
+	c := &contract.ServiceCause{Service: best.Name, Key: best.Key, Dimension: dim, Procs: best.Procs, Value: val(best)}
+	switch dim {
+	case contract.DimensionMemory:
+		c.Unit = "bytes"
+	case contract.DimensionIO, contract.DimensionFilesystem:
+		c.Unit = "bytes_per_sec"
+	case contract.DimensionNetwork:
+		c.Unit = "connections"
+	default:
+		c.Unit, c.Value = "percent", best.CPUCores*100
+	}
+	for _, p := range best.Ports {
+		c.Ports = append(c.Ports, contract.Port{Proto: "tcp", Port: p})
+	}
+	return c
+}
+
+// attachLogs cuts the journal and kernel lines for the incident window: the
+// cause's unit first, then the next busiest units for the same resource.
+func attachLogs(ctx context.Context, d *doc.Document, since time.Time) {
+	if d.Snapshot == nil {
+		return
+	}
+	var units []string
+	if d.Incident != nil && d.Incident.Cause != nil {
+		if u, ok := strings.CutPrefix(d.Incident.Cause.Key, "unit:"); ok && strings.HasSuffix(u, ".service") {
+			units = append(units, u)
+		}
+	}
+	svcs := append([]inventory.Service(nil), d.Snapshot.Services...)
+	dim := d.Dimension
+	sort.SliceStable(svcs, func(i, j int) bool {
+		switch dim {
+		case contract.DimensionMemory:
+			return svcs[i].MemBytes > svcs[j].MemBytes
+		case contract.DimensionIO, contract.DimensionFilesystem:
+			return svcs[i].ReadBPS+svcs[i].WriteBPS > svcs[j].ReadBPS+svcs[j].WriteBPS
+		}
+		return svcs[i].CPUCores > svcs[j].CPUCores
+	})
+	for _, s := range svcs {
+		if len(units) >= 3 {
+			break
+		}
+		if s.Kind == "systemd" && strings.HasSuffix(s.Unit, ".service") && s.Unit != "pinproc.service" && !strings.HasPrefix(s.Unit, "systemd-") {
+			units = append(units, s.Unit)
+		}
+	}
+	d.Logs = journal.Collect(ctx, journal.Query{Units: units, Since: since, Until: time.Now(), Boot: d.Snapshot.Host.BootTime})
 }

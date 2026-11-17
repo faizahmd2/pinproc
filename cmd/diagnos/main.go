@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 
 	"github.com/faizahmd2/pinproc/internal/config"
+	"github.com/faizahmd2/pinproc/internal/console"
 	"github.com/faizahmd2/pinproc/internal/deliver"
+	"github.com/faizahmd2/pinproc/internal/inventory"
 	"github.com/faizahmd2/pinproc/internal/render"
 	druntime "github.com/faizahmd2/pinproc/internal/runtime"
-	"github.com/faizahmd2/pinproc/internal/tui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -25,24 +28,25 @@ var version = "dev"
 var commit = "none"
 var date = "unknown"
 
-// main runs the live view (bare `pinproc`), the daemon (`pinproc service run`,
+// main runs the one-look terminal view (bare `pinproc`), the daemon (`pinproc service run`,
 // started by systemd) or a CLI command.
 func main() {
 	logLevel.Set(slog.LevelWarn)
 	logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	druntime.Local(logger)
-	var upgrade, once bool
-	var interval time.Duration
+	var upgrade, asJSON bool
 	root := &cobra.Command{
 		Use:   "pinproc",
-		Short: "pinproc — read-only Linux machine watcher: live view, incident alerts, detailed reports",
-		Long: `pinproc watches a Linux host read-only. Run it bare for a live, top-like view;
-the systemd service captures incidents by itself and sends alerts to your callback
-and email; ` + "`pinproc report`" + ` builds the detailed machine report on demand.`,
-		Example: `  pinproc                       # live view (q to quit)
-  sudo pinproc report           # detailed report → report.html/json + callback
+		Short: "pinproc — read-only Linux incident watcher: pressure alerts, machine reports, one-look terminal view",
+		Long: `pinproc watches a Linux host read-only. The systemd service samples the kernel's
+pressure signals, captures an incident the moment a threshold is crossed and sends
+the alert to your email and callback. ` + "`pinproc report`" + ` describes the whole machine on
+demand. Run it bare for one structured look at the machine right now.`,
+		Example: `  pinproc                       # one look at the machine now
+  sudo pinproc config email     # get alerts by email (your own SMTP)
+  sudo pinproc report           # full machine description → report.html/json + delivery
   sudo pinproc alert email      # send a pressure alert now
-  sudo pinproc config email     # set up SMTP
+  pinproc config list           # current settings
   sudo pinproc --upgrade        # update to the latest release`,
 		Version:       version,
 		SilenceUsage:  true,
@@ -51,22 +55,29 @@ and email; ` + "`pinproc report`" + ` builds the detailed machine report on dema
 			if upgrade {
 				return runUpgrade(cmd.OutOrStdout())
 			}
-			opt := renderOptionsBestEffort()
-			fd := int(os.Stdout.Fd())
-			if once || !term.IsTerminal(fd) {
-				width := 120
-				if w, _, err := term.GetSize(fd); err == nil && w > 0 {
-					width = w
-				}
-				return tui.Once(cmd.OutOrStdout(), opt, width)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			snap, err := inventory.New(inventory.TerminalOptions()).Collect(ctx)
+			if err != nil {
+				return err
 			}
-			return tui.Run(opt, interval)
+			if asJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(snap)
+			}
+			fd := int(os.Stdout.Fd())
+			width := 0
+			if w, _, err := term.GetSize(fd); err == nil {
+				width = w
+			}
+			console.Render(cmd.OutOrStdout(), snap, renderOptionsBestEffort(), console.AutoStyle(term.IsTerminal(fd), width))
+			return nil
 		},
 	}
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config path")
 	root.Flags().BoolVar(&upgrade, "upgrade", false, "upgrade pinproc to the latest release (APT installs)")
-	root.Flags().BoolVar(&once, "once", false, "print one snapshot and exit (like top -b -n 1)")
-	root.Flags().DurationVarP(&interval, "interval", "d", 2*time.Second, "live view refresh interval")
+	root.Flags().BoolVar(&asJSON, "json", false, "print the machine snapshot as JSON instead")
 	root.AddCommand(newServiceCmd(), newSetupCmd(), newConfigCommand(), newDoctorCmd(), newReportCmd(), newAlertCmd(), newRenderCmd())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "pinproc:", err)
@@ -75,7 +86,7 @@ and email; ` + "`pinproc report`" + ` builds the detailed machine report on dema
 }
 
 // renderOptionsBestEffort reads the timezone from config when it is readable; the
-// live view must work for unprivileged users, so it falls back to UTC silently.
+// terminal view must work for unprivileged users, so it falls back to UTC silently.
 func renderOptionsBestEffort() render.Options {
 	if err := ensureManagedConfigReadable(); err == nil {
 		if cfg, err := config.Load(cfgPath); err == nil {

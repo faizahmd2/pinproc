@@ -34,6 +34,12 @@ func EnsureWritable(root string) error {
 	if err := os.MkdirAll(root, 0750); err != nil {
 		return err
 	}
+	// A restart that lands mid-probe can leave one behind; clear those first.
+	if stale, _ := filepath.Glob(filepath.Join(root, ".pinproc-startup-*")); len(stale) > 0 {
+		for _, s := range stale {
+			_ = os.Remove(s)
+		}
+	}
 	f, err := os.CreateTemp(root, ".pinproc-startup-*")
 	if err != nil {
 		return err

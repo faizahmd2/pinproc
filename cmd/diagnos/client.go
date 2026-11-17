@@ -47,7 +47,7 @@ func newReportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.ErrOrStderr(), "collecting (≈2–5s: two samples plus a bounded directory scan)…")
+			fmt.Fprintln(cmd.ErrOrStderr(), "describing this machine (≈3–6s: two samples, workloads, host checks, bounded directory scan)…")
 			ctx := context.Background()
 			inv, snap, err := collectBoth(ctx, cfg, engine.Request{
 				ID: fmt.Sprintf("report-%d", time.Now().UnixNano()), Host: localHostName(), Trigger: "manual",
@@ -128,6 +128,7 @@ func newAlertCmd() *cobra.Command {
 				}
 				d = buildDocument(cfg, doc.KindAlert, inv, snap)
 				d.TriggerDetail = "manual check (pinproc alert) — no threshold was crossed to send this"
+				attachLogs(context.Background(), d, time.Now().Add(-10*time.Minute))
 				htmlPath, _, err := writeOutputs(cfg, dir, "alert-manual", d)
 				if err != nil {
 					return err
@@ -146,7 +147,7 @@ func newAlertCmd() *cobra.Command {
 func send(cmd *cobra.Command, cfg *config.Config, d *doc.Document, names []string, force bool) error {
 	var chans []deliver.Channel
 	if len(names) == 0 {
-		chans = deliver.Enabled(cfg)
+		chans = deliver.EnabledFor(cfg, d.Kind)
 		if len(chans) == 0 {
 			fmt.Fprintln(cmd.OutOrStdout(), "\nno delivery channel enabled — set one with: sudo pinproc config callback | sudo pinproc config email")
 			return nil

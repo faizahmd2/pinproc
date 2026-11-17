@@ -34,6 +34,14 @@ type view struct {
 	Notes    []string
 	Footer   string
 	Cause    *causeView
+
+	Listeners []listenRow
+	Checks    []checkRow
+	ChecksOK  int
+	ChecksBad int
+	Logs      []logSection
+	// Which machine sections an alert shows: only the ones for its resource.
+	ShowMem, ShowCPU, ShowDisks, ShowNet bool
 }
 
 type banner struct{ Badge, Title, Sub, Class string }
@@ -57,7 +65,9 @@ type svcCard struct {
 	Class   string
 	Metrics string
 	Cause   bool
-	KV      []kv
+	Open    bool
+	Groups  []kvGroup
+	Cmds    []string
 }
 
 type tlRow struct{ At, Armed, Top, CPU, Mem, IO string }
@@ -93,6 +103,7 @@ type nicRow struct{ Name, Addr, Link, Rx, Tx, Drops, State string }
 
 type procRow struct {
 	PID, User, Service, CPU, Mem, Read, Write, FDs, Cmd string
+	State, Threads, Up                                  string
 	Gone                                                bool
 }
 
@@ -120,7 +131,7 @@ func newView(d *doc.Document, o Options) *view {
 	v.Banner = makeBanner(d)
 	v.Pillars = pillars(s, d.Dimension)
 	v.Devices = devices(s)
-	v.Services = services(s, d)
+	v.Services = services(s, d, o)
 	v.Timeline, v.TLNote = timeline(d.Incident)
 	v.Specs = specs(s)
 	v.Mem = memBreakdown(s)
@@ -129,6 +140,29 @@ func newView(d *doc.Document, o Options) *view {
 	v.NICs, v.NetLine = nics(s)
 	v.Procs = procs(s)
 	v.Cause = cause(d.Incident)
+	v.Listeners = listeners(s)
+	v.Checks = checks(s)
+	for _, c := range v.Checks {
+		if c.State == "warn" {
+			v.ChecksBad++
+		} else if c.State == "ok" {
+			v.ChecksOK++
+		}
+	}
+	v.Logs = logSections(d.Logs, o)
+	switch d.Dimension {
+	case contract.DimensionMemory:
+		v.ShowMem = true
+	case contract.DimensionIO, contract.DimensionFilesystem:
+		v.ShowDisks = true
+	case contract.DimensionNetwork:
+		v.ShowNet = true
+	default:
+		v.ShowCPU = true
+	}
+	if d.Kind == doc.KindReport {
+		v.ShowMem, v.ShowCPU, v.ShowDisks, v.ShowNet = true, true, true, true
+	}
 	v.Footer = fmt.Sprintf("pinproc · read-only · collected in %.1fs window · %s", s.Window.Seconds(), o.Time(d.GeneratedAt))
 	return v
 }
@@ -201,13 +235,13 @@ func pillars(s *inventory.Snapshot, dim contract.Dimension) []pillar {
 	out := []pillar{{
 		Name: fmt.Sprintf("CPU (%d CORES)", c.Cores), State: st, Class: cl,
 		Stat: fmt.Sprintf("%.2f / %d.00 c", busy, c.Cores), Path: "/proc/pressure/cpu",
-		Detail: fmt.Sprintf("some avg10=%.2f", c.PSI.SomeAvg10), Focus: dim == contract.DimensionCPU || dim == contract.DimensionScheduling,
+		Detail: trend(c.PSI), Focus: dim == contract.DimensionCPU || dim == contract.DimensionScheduling,
 	}}
 	st, cl = state(m.UsedPct >= 90 || m.PSI.SomeAvg10 >= 30 || m.SwapOutBPS > 1<<20, m.UsedPct >= 80 || m.PSI.SomeAvg10 >= 10, "OOM RISK", "TIGHT")
 	out = append(out, pillar{
 		Name: "MEMORY (" + gibShort(m.TotalBytes) + ")", State: st, Class: cl,
 		Stat: fmt.Sprintf("%s / %s GiB", GiB(float64(m.UsedBytes)), GiB(float64(m.TotalBytes))), Path: "/proc/pressure/memory",
-		Detail: fmt.Sprintf("some avg10=%.2f", m.PSI.SomeAvg10), Focus: dim == contract.DimensionMemory,
+		Detail: trend(m.PSI), Focus: dim == contract.DimensionMemory,
 	})
 	ioPSI := s.IOPSI.SomeAvg10
 	if d := busiestDisk(s); d != nil {
@@ -215,7 +249,7 @@ func pillars(s *inventory.Snapshot, dim contract.Dimension) []pillar {
 		out = append(out, pillar{
 			Name: "DISK IO (" + strings.ToUpper(shortKind(d.Kind)) + ")", State: st, Class: cl,
 			Stat: fmt.Sprintf("%.1f%% util · %.1f ms", d.UtilPct, d.AwaitMS), Path: "/proc/pressure/io",
-			Detail: fmt.Sprintf("some avg10=%.2f", ioPSI), Focus: dim == contract.DimensionIO || dim == contract.DimensionFilesystem,
+			Detail: trend(s.IOPSI), Focus: dim == contract.DimensionIO || dim == contract.DimensionFilesystem,
 		})
 	}
 	if n := primaryNIC(s); n != nil {
@@ -234,6 +268,14 @@ func pillars(s *inventory.Snapshot, dim contract.Dimension) []pillar {
 		})
 	}
 	return out
+}
+
+// trend is the kernel's stall average over 10s, 1m and 5m: rising, steady or easing.
+func trend(p inventory.PSI) string {
+	if !p.Available {
+		return "pressure n/a (kernel without PSI)"
+	}
+	return fmt.Sprintf("stalled 10s %.1f%% · 1m %.1f%% · 5m %.1f%%", p.SomeAvg10, p.SomeAvg60, p.SomeAvg300)
 }
 
 func shortKind(k string) string {
@@ -286,7 +328,7 @@ func devices(s *inventory.Snapshot) []devRow {
 }
 
 // services orders the owners by the alert's dimension and builds their cards.
-func services(s *inventory.Snapshot, d *doc.Document) []svcCard {
+func services(s *inventory.Snapshot, d *doc.Document, o Options) []svcCard {
 	list := make([]inventory.Service, 0, len(s.Services))
 	for _, sv := range s.Services {
 		if sv.Kind != "kernel" || sv.CPUCores >= 0.05 {
@@ -306,7 +348,7 @@ func services(s *inventory.Snapshot, d *doc.Document) []svcCard {
 	sort.SliceStable(list, func(i, j int) bool { return val(list[i]) > val(list[j]) })
 	n := 5
 	if d.Kind == doc.KindReport {
-		n = 10
+		n = 8
 	}
 	if len(list) > n {
 		list = list[:n]
@@ -355,97 +397,22 @@ func services(s *inventory.Snapshot, d *doc.Document) []svcCard {
 				c.Class = "warn"
 			}
 		}
-		c.Metrics = fmt.Sprintf("CPU: %s · MEM: %s · IO R/W: %s/%s · PID: %d", Cores(sv.CPUCores), BytesU(sv.MemBytes), Rate(sv.ReadBPS), Rate(sv.WriteBPS), sv.MainPID)
-		c.KV = serviceKV(sv, s)
+		c.Metrics = fmt.Sprintf("CPU %s · MEM %s · IO %s · PID %d", Cores(sv.CPUCores), BytesU(sv.MemBytes), Rate(sv.ReadBPS+sv.WriteBPS), sv.MainPID)
+		if n := len(sv.Listen); n > 0 {
+			cl := 0
+			for _, l := range sv.Listen {
+				cl += l.Clients
+			}
+			c.Metrics += fmt.Sprintf(" · %d client%s", cl, plural(cl))
+		}
+		if sv.Systemd != nil && sv.Systemd.Restarts > 0 {
+			c.Metrics += fmt.Sprintf(" · ↻%d", sv.Systemd.Restarts)
+		}
+		c.Groups, c.Cmds = workloadGroups(sv, s, o)
+		c.Open = c.Cause || (d.Kind == doc.KindReport && i == 0)
 		out = append(out, c)
 	}
 	return out
-}
-
-func serviceKV(sv inventory.Service, s *inventory.Snapshot) []kv {
-	var rows []kv
-	add := func(k, v, cls string) {
-		if strings.TrimSpace(v) != "" {
-			rows = append(rows, kv{k, v, cls})
-		}
-	}
-	cmd := sv.Cmdline
-	if cmd == "" {
-		cmd = sv.Exe
-	}
-	add("ExecStart / Binary", cmd, "")
-	if sv.Exe != "" && !strings.HasPrefix(cmd, sv.Exe) {
-		add("Program path (/proc/"+strconv.Itoa(sv.MainPID)+"/exe)", sv.Exe, "")
-	}
-	kind := sv.Kind
-	if sv.Unit != "" {
-		kind += " · " + sv.Unit
-	}
-	add("Owner", kind+" · user "+sv.User, "")
-	add("Processes", fmt.Sprintf("%d (main PID %d)", sv.Procs, sv.MainPID), "")
-	mem := "RSS " + BytesU(sv.MemBytes)
-	if s.Memory.PSSAccurate {
-		mem = "PSS " + BytesU(sv.MemBytes) + " (shared pages split fairly)"
-	}
-	if sv.SwapBytes > 0 {
-		mem += " · swap " + BytesU(sv.SwapBytes)
-	}
-	add("Memory", mem, "")
-	if sv.CgroupPath != "" {
-		add("Cgroup Path", sysCgroup+sv.CgroupPath, "")
-	}
-	if cg := sv.Cgroup; cg != nil {
-		limit := "unlimited"
-		cls := ""
-		if cg.MemMax > 0 {
-			limit = BytesU(cg.MemMax)
-			if float64(cg.MemCurrent) >= 0.9*float64(cg.MemMax) {
-				cls = "crit"
-			}
-		}
-		add("Cgroup memory (memory.current / memory.max)", BytesU(cg.MemCurrent)+" / "+limit, cls)
-		if cg.PSIAvailable {
-			cls = ""
-			if cg.MemPSISome10 >= 10 {
-				cls = "crit"
-			}
-			add("Cgroup PSI (memory / cpu / io .pressure)", fmt.Sprintf("mem some avg10=%.2f full avg10=%.2f · cpu some=%.2f · io some=%.2f", cg.MemPSISome10, cg.MemPSIFull10, cg.CPUPSISome10, cg.IOPSISome10), cls)
-		}
-		if cg.CPUMaxCores > 0 || cg.ThrottledPct > 0 {
-			v := fmt.Sprintf("%.0f%% of periods throttled", cg.ThrottledPct)
-			if cg.CPUMaxCores > 0 {
-				v += fmt.Sprintf(" · limit %.2f cores (cpu.max)", cg.CPUMaxCores)
-			}
-			cls = ""
-			if cg.ThrottledPct >= 25 {
-				cls = "warn"
-			}
-			add("CPU throttling (cpu.stat)", v, cls)
-		}
-		if cg.OOMKills > 0 {
-			add("OOM kills (memory.events)", strconv.FormatUint(cg.OOMKills, 10), "crit")
-		}
-	}
-	add(fmt.Sprintf("Disk I/O (/proc/%d/io, all procs)", sv.MainPID), "read_bytes: "+Rate(sv.ReadBPS)+" · write_bytes: "+Rate(sv.WriteBPS), "")
-	cls := ""
-	if sv.OOMScore >= 500 {
-		cls = "crit"
-	} else if sv.OOMScore >= 200 {
-		cls = "warn"
-	}
-	oom := strconv.Itoa(sv.OOMScore)
-	if sv.OOMAdj != 0 {
-		oom += fmt.Sprintf(" (oom_score_adj: %d)", sv.OOMAdj)
-	}
-	add(fmt.Sprintf("OOM Score (/proc/%d/oom_score)", sv.MainPID), oom, cls)
-	if len(sv.Ports) > 0 {
-		var ps []string
-		for _, p := range sv.Ports {
-			ps = append(ps, "tcp/"+strconv.Itoa(p))
-		}
-		add("Listening", strings.Join(ps, ", "), "")
-	}
-	return rows
 }
 
 func timeline(inc *contract.Incident) ([]tlRow, string) {
@@ -741,8 +708,12 @@ func nics(s *inventory.Snapshot) ([]nicRow, string) {
 		})
 	}
 	nt := s.Net
+	fdMax := thousands(float64(nt.FDMax), 0)
+	if nt.FDMax >= 1<<62 {
+		fdMax = "no limit"
+	}
 	line := fmt.Sprintf("TCP: %d active · %d TIME_WAIT · %d orphaned · %.1f retransmits/s · %d listen-queue overflows since boot · open files %s of %s",
-		nt.TCPInUse, nt.TCPTimeWait, nt.TCPOrphan, nt.RetransPerSec, nt.ListenOverflows, thousands(float64(nt.FDUsed), 0), thousands(float64(nt.FDMax), 0))
+		nt.TCPInUse, nt.TCPTimeWait, nt.TCPOrphan, nt.RetransPerSec, nt.ListenOverflows, thousands(float64(nt.FDUsed), 0), fdMax)
 	return out, line
 }
 
@@ -759,6 +730,7 @@ func procs(s *inventory.Snapshot) []procRow {
 		out = append(out, procRow{
 			PID: strconv.Itoa(p.PID), User: p.User, Service: p.Service, CPU: Cores(p.CPUCores), Mem: BytesU(memOf(p)),
 			Read: Rate(p.ReadBPS), Write: Rate(p.WriteBPS), FDs: fds, Cmd: procCmd(p, 110), Gone: p.ExeGone,
+			State: p.State, Threads: strconv.Itoa(p.Threads), Up: since(s.CollectedAt, p.StartedAt),
 		})
 	}
 	return out

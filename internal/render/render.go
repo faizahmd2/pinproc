@@ -78,6 +78,79 @@ type emailView struct {
 	Pillars                                      []emailPillar
 	Rows                                         []emailRow
 	Memory                                       []emailMem
+	Logs                                         []logSection
+	Checks                                       []checkRow // report: the ones needing attention
+}
+
+// DefaultAlertSubject is the alert subject when email.subject is not set.
+const DefaultAlertSubject = "[pinproc] {severity} · {dimension} pressure on {host} — {cause}"
+
+// Subject renders the email subject for d. Reports always use the built-in
+// subject; alerts use tmpl (or DefaultAlertSubject) with its placeholders filled.
+func Subject(d *doc.Document, tmpl string) string {
+	host, ip := "host", ""
+	if s := d.Snapshot; s != nil {
+		host = s.Host.Hostname
+		ip = s.Host.PublicIP
+		if ip == "" {
+			ip = s.Host.PrimaryIP
+		}
+	}
+	if d.Kind == doc.KindReport {
+		sub := "[pinproc] " + host + " — machine report"
+		if d.Tag != "" {
+			sub += " (" + d.Tag + ")"
+		}
+		return sub
+	}
+	if strings.TrimSpace(tmpl) == "" {
+		tmpl = DefaultAlertSubject
+		if d.Trigger == "manual" {
+			tmpl = "[pinproc] manual check on {host} — {headline}"
+		}
+	}
+	cause := d.Headline
+	if d.Incident != nil && d.Incident.Cause != nil {
+		c := d.Incident.Cause
+		cause = c.Service + " " + causeValue(c.Value, c.Unit)
+	}
+	dim := dimName(d.Dimension)
+	if dim == "" {
+		dim = "resource"
+	}
+	r := strings.NewReplacer("{host}", host, "{ip}", ip, "{tag}", d.Tag, "{severity}", strings.ToUpper(string(d.Severity)),
+		"{dimension}", dim, "{cause}", cause, "{headline}", d.Headline)
+	out := r.Replace(tmpl)
+	for _, empty := range []string{"[]", "()", "{}", "<>"} { // an unset {tag} must not leave "[]"
+		out = strings.ReplaceAll(out, empty, "")
+	}
+	out = strings.Trim(strings.Join(strings.Fields(out), " "), " -—:·")
+	if len(out) > 200 {
+		out = out[:199] + "…"
+	}
+	return out
+}
+
+// emailLogs keeps the email short: the first unit's newest lines and the
+// kernel's, nothing else (the attachment has them all).
+func emailLogs(in []logSection) []logSection {
+	var out []logSection
+	for _, s := range in {
+		if len(s.Lines) == 0 {
+			continue
+		}
+		if len(out) == 1 && s.Title != "Kernel" {
+			continue
+		}
+		if len(s.Lines) > 5 {
+			s.Lines = s.Lines[len(s.Lines)-5:]
+		}
+		out = append(out, s)
+		if len(out) == 2 {
+			break
+		}
+	}
+	return out
 }
 
 // RenderEmail renders the inline-styled email (table layout, no CSS classes or
@@ -107,10 +180,8 @@ func RenderEmail(d *doc.Document, o Options, attachment string) (Email, error) {
 	if d.Dimension != "" && d.Kind == doc.KindAlert {
 		e.BannerText += " · " + strings.ToUpper(dimName(d.Dimension))
 	}
-	e.Subject = fmt.Sprintf("[pinproc] %s — %s", s.Host.Hostname, d.Headline)
-	if d.Kind == doc.KindReport {
-		e.Subject = fmt.Sprintf("[pinproc] %s — detailed report", s.Host.Hostname)
-	}
+	e.Subject = Subject(d, o.Subject)
+	e.Logs = emailLogs(v.Logs)
 	e.Arch = fmt.Sprintf("%s (%d vCPU / %s)", s.Host.Arch, s.CPU.Cores, gibShort(s.Memory.TotalBytes))
 	var disks []string
 	for _, dk := range s.Disks {
@@ -157,6 +228,11 @@ func RenderEmail(d *doc.Document, o Options, attachment string) (Email, error) {
 		e.Rows = append(e.Rows, r)
 	}
 	if d.Kind == doc.KindReport {
+		for _, c := range v.Checks {
+			if c.State == "warn" {
+				e.Checks = append(e.Checks, c)
+			}
+		}
 		for _, bk := range s.Memory.Buckets {
 			e.Memory = append(e.Memory, emailMem{Label: bk.Label, Value: Bytes(bk.Value), Pct: Pct(share(bk.Value, float64(s.Memory.AccountedBytes)))})
 		}
@@ -228,10 +304,34 @@ func Text(d *doc.Document, o Options) string {
 		}
 	}
 	if len(v.Services) > 0 {
-		b.WriteString("\nTop services\n")
+		b.WriteString("\nWorkloads\n")
 		for _, c := range v.Services {
 			fmt.Fprintf(&b, "  %d. %s [%s]  %s\n", c.Rank, c.Name, c.Badge, c.Metrics)
 		}
+	}
+	for _, l := range v.Logs {
+		if len(l.Lines) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "\nLogs · %s  ($ %s)\n", l.Title, l.Cmd)
+		for _, ln := range l.Lines {
+			cnt := ""
+			if ln.Count > 1 {
+				cnt = fmt.Sprintf("  ×%d", ln.Count)
+			}
+			fmt.Fprintf(&b, "  %s %-6s %s%s\n", ln.At, ln.Prio, ln.Msg, cnt)
+		}
+	}
+	first := true
+	for _, c := range v.Checks {
+		if c.State != "warn" {
+			continue
+		}
+		if first {
+			b.WriteString("\nNeeds attention\n")
+			first = false
+		}
+		fmt.Fprintf(&b, "  ! %s: %s  ($ %s)\n", c.Name, c.Value, c.Cmd)
 	}
 	return b.String()
 }

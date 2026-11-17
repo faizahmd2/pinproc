@@ -63,17 +63,28 @@ func Options(cfg *config.Config) render.Options {
 	if err != nil {
 		return render.Options{}
 	}
-	return render.Options{Location: loc, Zone: zone}
+	return render.Options{Location: loc, Zone: zone, Subject: cfg.Email.Subject}
 }
 
-// Enabled lists the channels that are configured and switched on.
+// Enabled lists the channels that are configured and switched on, in alert
+// priority order: email first (a person reads it), then the callback.
 func Enabled(cfg *config.Config) []Channel {
 	var out []Channel
+	if cfg.Email.Enabled {
+		out = append(out, Email)
+	}
 	if cfg.Callback.Enabled && strings.TrimSpace(cfg.Callback.URL) != "" {
 		out = append(out, Callback)
 	}
-	if cfg.Email.Enabled {
-		out = append(out, Email)
+	return out
+}
+
+// EnabledFor orders the channels for a document: alerts email-first, reports
+// callback-first (a report is usually collected by a system, then read).
+func EnabledFor(cfg *config.Config, kind doc.Kind) []Channel {
+	out := Enabled(cfg)
+	if kind == doc.KindReport && len(out) == 2 {
+		out[0], out[1] = out[1], out[0]
 	}
 	return out
 }

@@ -25,7 +25,11 @@ type Options struct {
 	ReadSmaps bool // PSS from smaps_rollup for the heaviest services/processes
 	Enrich    bool // exe, cmdline, fds, oom, ports for top processes/services
 
-	Ports      bool          // listening ports per service (walks the services' fds)
+	Ports      bool          // sockets per service: listeners, clients, outbound peers (walks fds)
+	AllSockets bool          // attribute every listener on the host, not only the top services
+	Units      bool          // ask systemd about each service unit (systemctl show, 2s bound)
+	Threads    bool          // short extra window measuring the busiest processes' threads
+	Checks     bool          // host runtime checks (swap, limits, clock, journal, ssh, ...)
 	ScanDirs   bool          // bounded largest-directory scan per mount (report only)
 	ScanBudget time.Duration // total wall time for ScanDirs (default 4s)
 }
@@ -53,21 +57,22 @@ func (o *Options) normalize() {
 
 // ReportOptions is the full, detailed collection used by `pinproc report`.
 func ReportOptions() Options {
-	return Options{TopProcs: 15, ReadSmaps: true, Enrich: true, Ports: true, ScanDirs: true}
+	return Options{TopProcs: 15, ReadSmaps: true, Enrich: true, Ports: true, AllSockets: true, Units: true, Threads: true, Checks: true, ScanDirs: true}
 }
 
-// AlertOptions is the collection attached to a captured incident: everything but
-// the directory scan, so a capture stays fast while the machine is struggling.
+// AlertOptions is the collection attached to a captured incident: the workloads
+// in full, without the host checks and the directory scan, so a capture stays
+// fast while the machine is struggling.
 func AlertOptions() Options {
-	return Options{TopProcs: 15, ReadSmaps: true, Enrich: true, Ports: true}
+	return Options{TopProcs: 15, ReadSmaps: true, Enrich: true, Ports: true, Units: true, Threads: true}
 }
 
-// LiveOptions is the cheap per-refresh collection for the terminal view.
-func LiveOptions() Options {
-	return Options{TopProcs: 40, Enrich: true}
+// TerminalOptions is the one-shot collection behind bare `pinproc`.
+func TerminalOptions() Options {
+	return Options{TopProcs: 10, Enrich: true, Ports: true, AllSockets: true, Units: true, Checks: true}
 }
 
-// Collector produces Snapshots. It keeps the previous sample so a live view can
+// Collector produces Snapshots. It keeps the previous sample so a repeat caller can
 // compute rates from one read pass per refresh instead of sleeping each time.
 type Collector struct {
 	opt     Options
@@ -150,14 +155,21 @@ func (c *Collector) build(ctx context.Context, a, b *sample) *Snapshot {
 	snap.CPU = c.cpu(a, b)
 	snap.Net = c.netSummary(a, b, secs)
 	snap.NICs = c.nics(a, b, secs)
-	procs, services, tasks := c.processes(ctx, a, b, secs)
+	procs, services, tasks, listeners := c.processes(ctx, a, b, secs)
 	snap.Tasks = tasks
+	snap.Listeners = listeners
 	snap.Memory = c.memory(a, b, secs, services)
 	snap.Disks = c.disks(a, b, secs, &snap.Notes)
 	snap.IOPSI = readPSI(filepath.Join(c.opt.Proc, "pressure/io"))
 	cpuParts(&snap.CPU, services)
+	if c.opt.Threads && ctx.Err() == nil {
+		c.hotThreads(ctx, services, procs)
+	}
 	snap.Services = services
 	snap.Processes = procs
+	if c.opt.Checks && ctx.Err() == nil {
+		snap.Checks = c.checks(ctx, snap)
+	}
 	if !snap.Memory.PSSAccurate && c.opt.ReadSmaps {
 		snap.Notes = append(snap.Notes, "per-process PSS unavailable (smaps_rollup unreadable) — memory per service uses RSS; run as root for exact shares")
 	}
@@ -249,7 +261,7 @@ func readPSI(path string) PSI {
 	if err != nil {
 		return PSI{}
 	}
-	return PSI{SomeAvg10: p.Some.Avg10, SomeAvg60: p.Some.Avg60, FullAvg10: p.Full.Avg10, FullAvg60: p.Full.Avg60, Available: true}
+	return PSI{SomeAvg10: p.Some.Avg10, SomeAvg60: p.Some.Avg60, SomeAvg300: p.Some.Avg300, FullAvg10: p.Full.Avg10, FullAvg60: p.Full.Avg60, Available: true}
 }
 
 func (c *Collector) cpu(a, b *sample) CPU {

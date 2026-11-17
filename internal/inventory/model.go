@@ -31,6 +31,8 @@ type Snapshot struct {
 	Tasks       Tasks         `json:"tasks"`
 	Services    []Service     `json:"services,omitempty"`  // grouped owners, heaviest first
 	Processes   []Process     `json:"processes,omitempty"` // top processes (bounded)
+	Listeners   []Listener    `json:"listeners,omitempty"` // every listening TCP/UDP socket (ss -tulpn)
+	Checks      []Check       `json:"checks,omitempty"`    // host runtime checks (report)
 	Notes       []string      `json:"notes,omitempty"`     // what could not be read, and why
 }
 
@@ -52,11 +54,12 @@ type Host struct {
 
 // PSI is one /proc/pressure/<resource> file (percent of wall time stalled).
 type PSI struct {
-	SomeAvg10 float64 `json:"some_avg10"`
-	SomeAvg60 float64 `json:"some_avg60"`
-	FullAvg10 float64 `json:"full_avg10"`
-	FullAvg60 float64 `json:"full_avg60"`
-	Available bool    `json:"available"`
+	SomeAvg10  float64 `json:"some_avg10"`
+	SomeAvg60  float64 `json:"some_avg60"`
+	SomeAvg300 float64 `json:"some_avg300"`
+	FullAvg10  float64 `json:"full_avg10"`
+	FullAvg60  float64 `json:"full_avg60"`
+	Available  bool    `json:"available"`
 }
 
 // Share is one named consumer inside a bucket.
@@ -218,6 +221,19 @@ type Service struct {
 	Ports      []int        `json:"ports,omitempty"`
 	Cgroup     *CgroupStats `json:"cgroup,omitempty"`
 
+	// The live shape of the workload: how it runs, what it holds open, who talks
+	// to it and whom it depends on.
+	StartedAt     time.Time  `json:"started_at,omitempty"` // main process start
+	Threads       int        `json:"threads,omitempty"`
+	FDs           int        `json:"fds,omitempty"`      // open file descriptors, all processes
+	FDLimit       uint64     `json:"fd_limit,omitempty"` // main process soft RLIMIT_NOFILE
+	Parents       []string   `json:"parents,omitempty"`  // launch chain of the main process, e.g. "containerd-shim (812)"
+	Listen        []Listener `json:"listen,omitempty"`   // sockets it accepts on, with connected clients
+	Peers         []Peer     `json:"peers,omitempty"`    // established outbound connections, grouped
+	Systemd       *UnitInfo  `json:"systemd,omitempty"`
+	HotThreads    []Thread   `json:"hot_threads,omitempty"` // busiest threads of the busiest process
+	HotThreadsPID int        `json:"hot_threads_pid,omitempty"`
+
 	userCores, sysCores float64 // split of CPUCores, for the CPU breakdown only
 	pids                []int
 }
@@ -234,6 +250,72 @@ type CgroupStats struct {
 	ThrottledPct float64 `json:"cpu_throttled_pct"` // share of periods throttled in the window
 	CPUMaxCores  float64 `json:"cpu_max_cores,omitempty"`
 	PSIAvailable bool    `json:"psi_available"`
+
+	MemPeak      uint64  `json:"memory_peak,omitempty"` // memory.peak: high-water mark since start
+	MemHigh      uint64  `json:"memory_high,omitempty"` // memory.high: throttle point, 0 = none
+	SwapCurrent  uint64  `json:"memory_swap_current,omitempty"`
+	CPUUsageSec  float64 `json:"cpu_usage_sec,omitempty"`  // cpu.stat usage_usec, lifetime
+	IOReadTotal  uint64  `json:"io_read_bytes,omitempty"`  // io.stat rbytes, lifetime
+	IOWriteTotal uint64  `json:"io_write_bytes,omitempty"` // io.stat wbytes, lifetime
+	PidsCurrent  uint64  `json:"pids_current,omitempty"`
+	PidsMax      uint64  `json:"pids_max,omitempty"` // 0 = unlimited
+}
+
+// Listener is one listening socket and the clients connected to it right now.
+type Listener struct {
+	Proto   string `json:"proto"` // tcp, tcp6, udp, udp6
+	Addr    string `json:"addr"`  // bind address; 0.0.0.0 / :: = every interface
+	Port    int    `json:"port"`
+	Clients int    `json:"clients,omitempty"` // established connections on this port
+	Service string `json:"service,omitempty"`
+	PID     int    `json:"pid,omitempty"`
+	Public  bool   `json:"public"` // bound to a non-loopback address
+}
+
+// Peer is a group of established outbound connections to one remote endpoint.
+type Peer struct {
+	Addr  string `json:"addr"`
+	Port  int    `json:"port"`
+	Conns int    `json:"conns"`
+	Name  string `json:"name,omitempty"` // local service owning that port, or the well-known protocol
+}
+
+// UnitInfo is what systemd knows about a service (systemctl show).
+type UnitInfo struct {
+	Description string    `json:"description,omitempty"`
+	File        string    `json:"file,omitempty"` // FragmentPath
+	DropIns     []string  `json:"drop_ins,omitempty"`
+	Type        string    `json:"type,omitempty"`
+	Restart     string    `json:"restart,omitempty"`
+	Restarts    int       `json:"restarts"` // NRestarts
+	ActiveSince time.Time `json:"active_since,omitempty"`
+	State       string    `json:"state,omitempty"` // ActiveState/SubState
+	User        string    `json:"user,omitempty"`
+	WorkingDir  string    `json:"working_dir,omitempty"`
+	DependsOn   []string  `json:"depends_on,omitempty"` // Requires/Wants/BindsTo/After, noise filtered
+	MemoryMax   string    `json:"memory_max,omitempty"`
+	CPUQuota    string    `json:"cpu_quota,omitempty"`
+	LimitNOFILE string    `json:"limit_nofile,omitempty"`
+}
+
+// Thread is one thread of a process (top -H).
+type Thread struct {
+	TID   int     `json:"tid"`
+	Name  string  `json:"name"`
+	Cores float64 `json:"cores"`
+	State string  `json:"state"`
+}
+
+// Check is one host runtime check: a fact a senior engineer looks at first,
+// with the command that verifies it.
+type Check struct {
+	ID    string `json:"id"`
+	Area  string `json:"area"` // memory, files, network, time, logs, security, updates, services, storage
+	Name  string `json:"name"`
+	State string `json:"state"` // ok, warn, info
+	Value string `json:"value"`
+	Hint  string `json:"hint,omitempty"`
+	Cmd   string `json:"cmd,omitempty"`
 }
 
 // Process is one process, the way htop shows it with the full program path.

@@ -15,6 +15,7 @@ import (
 type Options struct {
 	Location *time.Location // default UTC
 	Zone     string         // label printed next to times, e.g. "UTC" or "IST"
+	Subject  string         // alert email subject template (empty = DefaultAlertSubject)
 }
 
 func (o Options) loc() (*time.Location, string) {
@@ -181,6 +182,8 @@ func Duration(d time.Duration) string {
 		return fmt.Sprintf("%dd %dh", days, h)
 	case h > 0:
 		return fmt.Sprintf("%dh %dm", h, m)
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}
 	return fmt.Sprintf("%dm", m)
 }
